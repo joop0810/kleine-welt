@@ -1,4 +1,4 @@
-// Kleine Welt - "Cala": kleine Mittelmeerbucht als Wohlfuehl-Deko fuer die Wand
+// Kleine Welt - zehn Mallorca-Szenen als Wohlfuehl-Deko fuer die Wand (Wechsel alle 10 Minuten)
 // Board: Waveshare ESP32-S3-Touch-AMOLED-1.75 (466x466 AMOLED, CO5300 QSPI, Touch CST9217)
 //
 // Bibliotheken (gleiche Versionen wie TamaPoke):
@@ -24,7 +24,7 @@
 #include <XPowersLib.h>
 #include "game.h"
 
-#define FW_VERSION "0.3.1"
+#define FW_VERSION "0.4.0"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
 Arduino_CO5300 *panel = new Arduino_CO5300(bus, LCD_RESET, 0, LCD_WIDTH, LCD_HEIGHT, 6, 0, 0, 0);
@@ -67,7 +67,7 @@ static void syncClock() {
 void setup() {
   Serial.begin(115200);
   Serial.setTxTimeoutMs(0);   // ohne offenen Monitor nicht blockieren
-  Serial.printf("Kleine Welt (Cala) fw v%s\n", FW_VERSION);
+  Serial.printf("Kleine Welt fw v%s\n", FW_VERSION);
 
   Wire.begin(IIC_SDA, IIC_SCL);
   Wire.setTimeOut(50);
@@ -102,7 +102,7 @@ void setup() {
 
   uint32_t t0 = millis();
   kw::begin(fb, work, esp_random());
-  Serial.printf("Bucht vorgerendert in %lu ms\n", (unsigned long)(millis() - t0));
+  Serial.printf("Start in %lu ms\n", (unsigned long)(millis() - t0));
   syncClock();
 }
 
@@ -140,8 +140,8 @@ void loop() {
   frames++;
   if (now - fpsT > 10000) {
     kw::Debug d = kw::debug();
-    Serial.printf("fps %.1f  zeit %.2f h  tag %.2f  boote am steg %d  hell %u\n",
-                  frames * 1000.0f / (now - fpsT), d.hours, d.daylight, d.boatsDocked, brightNow);
+    Serial.printf("fps %.1f  zeit %.2f h  szene %s  tag %.2f  hell %u\n",
+                  frames * 1000.0f / (now - fpsT), d.hours, kw::sceneName(d.scene), d.daylight, brightNow);
     fpsT = now; frames = 0;
   }
 }

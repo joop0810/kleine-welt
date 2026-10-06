@@ -1,9 +1,9 @@
 # Kleine Welt
 
 Wohlfühl-Deko für das **Waveshare ESP32-S3-Touch-AMOLED-1.75** (466×466 rundes AMOLED):
-eine kleine Mittelmeerbucht („Cala“) mit Finca, Steg, Booten und echtem Tageslauf nach
-der eingebauten Uhr. Antippen ist freiwillig (Boot anlegen lassen, Fisch, Möwe, Licht),
-lange drücken stellt die Uhr.
+zehn kleine Mallorca-Szenen (Cala, Felsbucht, Fischerhafen, Olivenfinca, Bergdorf, Steilküste,
+Windmühlen, Palma, Strandbar, Felsentor), die alle 10 Minuten überblenden. Jede folgt der echten
+Uhrzeit aus der eingebauten Uhr. Wischen = nächste Szene, lange drücken = Uhr stellen.
 
 Der frühere Zelda-artige Prototyp liegt im Branch `zelda-prototyp`.
 
@@ -20,9 +20,10 @@ bricht ab, falls sich die Partitionstabelle je ändern sollte.
 
 | Pfad | Inhalt |
 |---|---|
-| `firmware-src/KleineWelt/game.cpp` | Szene (ohne Arduino-Abhängigkeit): Landschaft, Licht je Tageszeit, Boote, Tiere |
+| `firmware-src/KleineWelt/game.cpp` | Kern (ohne Arduino-Abhängigkeit): Tageslicht, Himmel, Boote, Wechsel, Eingabe |
+| `firmware-src/KleineWelt/scenes.h` | die zehn Szenen (Bauplan + Animationen) |
 | `firmware-src/KleineWelt/KleineWelt.ino` | Board: Display (CO5300/QSPI), Touch (CST9217), RTC (PCF85063), AXP2101, Helligkeit |
-| `host/sim.cpp` | PC-Test: rendert die Bucht zu mehreren Tageszeiten, prüft die Tipp-Aktionen |
+| `host/sim.cpp` | PC-Test: rendert jede Szene zu drei Tageszeiten, prüft Wechsel, Wischen, Tippen, Uhr |
 | `tools/make_manifest.py` | erzeugt `manifest.json`, prüft Partitionstabelle |
 | `.github/workflows/firmware.yml` | Cloud-Build bei jeder Änderung am Quellcode |
 

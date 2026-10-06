@@ -1,5 +1,5 @@
 #pragma once
-// Kleine Welt - "Cala": eine kleine Mittelmeerbucht als Wohlfuehl-Deko.
+// Kleine Welt - zehn kleine Mallorca-Szenen als Wohlfuehl-Deko.
 // Der Kern kennt weder Arduino noch Display noch Touch-Chip: er bekommt einen
 // Framebuffer (466x466 RGB565), die Uhrzeit und pro Frame die Fingerpunkte.
 // Derselbe Code laeuft auf dem Board und im PC-Testprogramm (host/).
@@ -30,14 +30,19 @@ uint8_t wantBrightness();
 struct Debug {
   float hours;        // Uhrzeit 0..24
   float daylight;     // 0 Nacht .. 1 Tag
-  int boatsDocked;
-  int boatState[3];   // 0 faehrt, 1 legt an, 2 liegt am Steg, 3 legt ab
-  float boatX[3], boatY[3];
+  int scene;          // aktuelle Szene
+  bool fading;        // Ueberblendung laeuft
+  int nBoats, boatsDocked;
+  int boatState[5];   // 0 faehrt, 1 legt an, 2 liegt am Steg, 3 legt ab
+  float boatX[5], boatY[5];
   bool clockUi;
   bool lightsOn;
 };
 Debug debug();
-// Test: Uhrzeit fest vorgeben (Stunden, -1 = aus)
+int sceneCount();
+const char *sceneName(int s);
+// Test: Uhrzeit fest vorgeben (Stunden, -1 = aus) bzw. Szene festhalten (-1 = aus)
 void testSetHours(float h, int month);
+void testSetScene(int s);
 
 }  // namespace kw

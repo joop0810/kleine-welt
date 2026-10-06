@@ -1,6 +1,6 @@
 {
-  "name": "Kleine Welt 0.3.1",
-  "version": "0.3.1",
+  "name": "Kleine Welt 0.4.0",
+  "version": "0.4.0",
   "new_install_prompt_erase": true,
   "builds": [
     {
@@ -19,7 +19,7 @@
           "offset": 57344
         },
         {
-          "path": "firmware/app.bin?v=d9da57f228d58e19",
+          "path": "firmware/app.bin?v=a496320e5a8b690d",
           "offset": 65536
         }
       ]
