@@ -1,0 +1,5 @@
+firmware-src/KleineWelt/build/
+host/sim
+host/out/
+sim-out/
+sim

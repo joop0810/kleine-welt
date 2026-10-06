@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kleine Welt – Installer</title>
+  <meta name="description" content="Kleine Welt auf das Waveshare ESP32-S3-Touch-AMOLED-1.75 flashen – direkt im Browser.">
+  <style>
+    :root {
+      --bg: #120e18; --panel: #1d1726; --line: #2e2540; --text: #efe8f5; --muted: #a99fb8;
+      --teal: #2fa39a; --teal-d: #1f6e6a; --warm: #ff9a40; --danger: #ff6b7d;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+      font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 720px; margin: 0 auto; padding: 40px 16px 64px; }
+    header { display: flex; gap: 28px; align-items: center; flex-wrap: wrap; }
+    .orb { width: 220px; height: 220px; border-radius: 50%; overflow: hidden; flex: none;
+      box-shadow: 0 0 0 6px #000, 0 0 0 8px var(--line), 0 20px 60px rgba(255,154,64,.12); }
+    .orb img { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+    h1 { font-size: 2.4rem; line-height: 1.1; margin: 0 0 8px; letter-spacing: .5px; }
+    .tag { color: var(--warm); font-weight: 600; text-transform: uppercase; font-size: .78rem; letter-spacing: 2px; }
+    .lead { color: var(--muted); margin: 6px 0 0; max-width: 34ch; }
+    section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px; margin-top: 24px; }
+    h2 { font-size: 1.1rem; margin: 0 0 12px; }
+    ol { margin: 0; padding-left: 1.3em; } li { margin: 6px 0; }
+    .warn { border-color: #5a2b37; background: #241520; }
+    .warn strong { color: var(--danger); }
+    esp-web-install-button button.go {
+      appearance: none; border: 0; border-radius: 999px; padding: 14px 28px; font: 600 1.05rem system-ui, sans-serif;
+      color: #08100f; background: var(--teal); cursor: pointer; }
+    esp-web-install-button button.go:hover { background: #3bbdb2; }
+    .note { color: var(--muted); font-size: .92rem; margin-top: 12px; }
+    table { border-collapse: collapse; width: 100%; }
+    td { padding: 7px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+    td:first-child { color: var(--warm); white-space: nowrap; padding-right: 16px; font-weight: 600; }
+    tr:last-child td { border-bottom: 0; }
+    code { background: #0d0a12; padding: 1px 6px; border-radius: 5px; }
+    footer { color: var(--muted); font-size: .85rem; margin-top: 32px; }
+    a { color: var(--teal); }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="orb"><img src="docs/vorschau.png" alt="Spielszene: runder Raum, Held schiebt einen Steinblock"></div>
+    <div>
+      <div class="tag">Prototyp 0.1</div>
+      <h1>Kleine Welt</h1>
+      <p class="lead">Ein Held, ein runder Raum, ein Schleimling und ein Schalter-Rätsel. Für das Waveshare ESP32-S3-Touch-AMOLED-1.75.</p>
+    </div>
+  </header>
+
+  <section>
+    <h2>Installieren</h2>
+    <ol>
+      <li>Chrome oder Edge am Computer öffnen (Web Serial).</li>
+      <li>Board per USB-C anschließen.</li>
+      <li>Auf <em>Installieren</em> klicken und den Port wählen.</li>
+      <li>Bei <strong>„Erase device“ das Kästchen leer lassen</strong> → <em>Next</em> → <em>Install</em>.</li>
+    </ol>
+    <p style="margin-top:18px">
+      <esp-web-install-button manifest="manifest.json">
+        <button class="go" slot="activate">Installieren</button>
+        <span slot="unsupported">Dieser Browser kann kein Web Serial. Bitte Chrome oder Edge am Computer verwenden.</span>
+        <span slot="not-allowed">Web Serial braucht eine sichere Verbindung (https).</span>
+      </esp-web-install-button>
+    </p>
+    <p class="note" id="version">Firmware wird geladen …</p>
+  </section>
+
+  <section class="warn">
+    <h2>TamaPoke-Spielstand bleibt erhalten</h2>
+    <p>Kleine Welt ersetzt nur das Programm. TamaPokes Spielstand und die Ruhmeshalle liegen in eigenen Speicherbereichen, die Kleine Welt weder liest noch beschreibt – <strong>solange „Erase device“ nicht angehakt ist</strong>. Ein Haken dort löscht alles unwiderruflich.</p>
+    <p class="note">Zurück zu TamaPoke: einfach TamaPoke wieder über dessen Installer flashen (ebenfalls ohne „Erase device“). Der alte Stand ist dann wieder da.</p>
+  </section>
+
+  <section>
+    <h2>Steuerung</h2>
+    <table>
+      <tr><td>Finger halten</td><td>Held läuft zum Finger</td></tr>
+      <tr><td>Kurz tippen</td><td>Held läuft zu dieser Stelle</td></tr>
+      <tr><td>Tipp nah am Held</td><td>Schwerthieb in diese Richtung</td></tr>
+      <tr><td>Tipp auf Gegner</td><td>Held läuft hin und schlägt zu</td></tr>
+      <tr><td>Gegen Block laufen</td><td>Block rutscht eine Kachel weiter</td></tr>
+    </table>
+    <p class="note">Ziel: den Steinblock auf die goldene Platte schieben, dann öffnet sich das Gitter oben. Sitzt der Block fest, versinkt er und taucht am Start wieder auf. Nach 1 Minute ohne Berührung wird das Display dunkler, nach 3 Minuten geht es aus – Antippen weckt es.</p>
+  </section>
+
+  <footer>
+    © 2026 Kleine Welt · Alle Rechte vorbehalten. Installer: <a href="https://github.com/esphome/esp-web-tools">esp-web-tools</a> (Apache-2.0).
+  </footer>
+</main>
+<script type="module" src="vendor/esp-web-tools-10.4.0/install-button.js"></script>
+<script>
+  fetch('manifest.json', { cache: 'no-store' }).then(r => r.json()).then(m => {
+    const el = document.getElementById('version');
+    if (m.new_install_prompt_erase !== true) {
+      // Sicherheitsnetz: ohne diese Angabe wuerde esp-web-tools ungefragt loeschen
+      document.querySelector('esp-web-install-button').remove();
+      el.textContent = 'Installer gesperrt: Manifest ohne Lösch-Abfrage.';
+      return;
+    }
+    el.textContent = 'Firmware ' + m.version + ' · ESP32-S3 · 16 MB Flash, OPI-PSRAM';
+  }).catch(() => {});
+</script>
+</body>
+</html>

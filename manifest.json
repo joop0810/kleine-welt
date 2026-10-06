@@ -1,0 +1,28 @@
+{
+  "name": "Kleine Welt 0.1.0",
+  "version": "0.1.0",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        {
+          "path": "firmware/bootloader.bin?v=31b3c1be45dc5a76",
+          "offset": 0
+        },
+        {
+          "path": "firmware/partitions.bin?v=ace02503447d0f47",
+          "offset": 32768
+        },
+        {
+          "path": "firmware/boot_app0.bin?v=f94c5d786a7a8fab",
+          "offset": 57344
+        },
+        {
+          "path": "firmware/app.bin?v=680e2d42740f6021",
+          "offset": 65536
+        }
+      ]
+    }
+  ]
+}
