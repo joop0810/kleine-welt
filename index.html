@@ -45,9 +45,9 @@
   <header>
     <div class="orb"><img src="docs/vorschau.png" alt="Spielszene: runder Raum, Held schiebt einen Steinblock"></div>
     <div>
-      <div class="tag">Prototyp 0.1</div>
+      <div class="tag">Prototyp 0.2</div>
       <h1>Kleine Welt</h1>
-      <p class="lead">Ein Held, ein runder Raum, ein Schleimling und ein Schalter-Rätsel. Für das Waveshare ESP32-S3-Touch-AMOLED-1.75.</p>
+      <p class="lead">Vier runde Räume, Schleimlinge, Block-Rätsel und eine Schatztruhe. Für das Waveshare ESP32-S3-Touch-AMOLED-1.75.</p>
     </div>
   </header>
 
@@ -78,13 +78,12 @@
   <section>
     <h2>Steuerung</h2>
     <table>
-      <tr><td>Finger halten</td><td>Held läuft zum Finger</td></tr>
-      <tr><td>Kurz tippen</td><td>Held läuft zu dieser Stelle</td></tr>
-      <tr><td>Tipp nah am Held</td><td>Schwerthieb in diese Richtung</td></tr>
-      <tr><td>Tipp auf Gegner</td><td>Held läuft hin und schlägt zu</td></tr>
+      <tr><td>Steuerkreuz links unten</td><td>Daumen aufsetzen und schieben – je weiter, desto schneller</td></tr>
+      <tr><td>Schwert rechts unten</td><td>Hieb in Blickrichtung (zielt leicht auf nahe Gegner), vor der Truhe: öffnen</td></tr>
+      <tr><td>Beides gleichzeitig</td><td>Laufen und schlagen mit zwei Daumen</td></tr>
       <tr><td>Gegen Block laufen</td><td>Block rutscht eine Kachel weiter</td></tr>
     </table>
-    <p class="note">Ziel: den Steinblock auf die goldene Platte schieben, dann öffnet sich das Gitter oben. Sitzt der Block fest, versinkt er und taucht am Start wieder auf. Nach 1 Minute ohne Berührung wird das Display dunkler, nach 3 Minuten geht es aus – Antippen weckt es.</p>
+    <p class="note">Räume: Eingang (alle Gegner besiegen) → Der Block → Zwei Platten → Schatzkammer. Durch die untere Tür geht es zurück; gelöste Räume bleiben offen. Sitzt der Block fest, versinkt er und taucht am Start wieder auf. Nach 1 Minute ohne Berührung wird das Display dunkler, nach 3 Minuten geht es aus – Antippen weckt es.</p>
   </section>
 
   <footer>

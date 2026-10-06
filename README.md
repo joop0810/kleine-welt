@@ -3,8 +3,9 @@
 Prototyp eines eigenen Action-Adventures für das **Waveshare ESP32-S3-Touch-AMOLED-1.75**
 (466×466 rundes AMOLED). Das runde Display ist das Fenster in die Welt.
 
-**Stand 0.1:** ein runder Raum, ein Held, ein Schleimling, ein Schalter-Rätsel
-(Steinblock auf die Bodenplatte schieben → Gitter öffnet sich). Steuerung per Touch.
+**Stand 0.2:** vier verbundene Räume (Eingang → Der Block → Zwei Platten → Schatzkammer),
+Schleimlinge, Block-auf-Platte-Rätsel, Truhe als Ziel. Steuerung: Steuerkreuz links unten,
+Schwert-Knopf rechts unten (zwei Finger gleichzeitig möglich).
 
 ## Installieren
 

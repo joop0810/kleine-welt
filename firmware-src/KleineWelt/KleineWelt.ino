@@ -19,7 +19,7 @@
 #include <XPowersLib.h>
 #include "game.h"
 
-#define FW_VERSION "0.1.0"
+#define FW_VERSION "0.2.0"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
 Arduino_CO5300 *panel = new Arduino_CO5300(bus, LCD_RESET, 0, LCD_WIDTH, LCD_HEIGHT, 6, 0, 0, 0);
@@ -32,8 +32,10 @@ static uint16_t *fb = nullptr, *bg = nullptr;
 // der Finger liegt) wird I2C gelesen - ein schlafender Chip blockiert sonst ~1 s.
 static volatile bool touchIrq = false;
 static void IRAM_ATTR touchIsr() { touchIrq = true; }
+// Bis zu zwei Finger (Steuerkreuz + Schwert gleichzeitig)
+static kw::Touch fingers[2];
+static int nFingers = 0;
 static bool fingerDown = false;
-static int16_t fingerX = 0, fingerY = 0;
 
 static void readTouch() {
   static uint32_t lastPoll = 0;
@@ -41,10 +43,13 @@ static void readTouch() {
   lastPoll = millis();
   if (!touchIrq && !fingerDown) return;
   touchIrq = false;
-  int16_t x, y;
-  bool pressed = touch.getPoint(&x, &y, 1) > 0;
-  if (pressed) { fingerX = x; fingerY = y; }
-  fingerDown = pressed;
+  int16_t xs[2], ys[2];
+  int n = touch.getPoint(xs, ys, 2);
+  if (n > 2) n = 2;
+  if (n < 0) n = 0;
+  for (int i = 0; i < n; i++) { fingers[i].x = xs[i]; fingers[i].y = ys[i]; }
+  nFingers = n;
+  fingerDown = n > 0;
 }
 
 // AMOLED schonen: nach 60 s ohne Beruehrung dunkler, nach 3 min aus.
@@ -119,14 +124,14 @@ void loop() {
   if (now - lastFrame < 25) { delay(1); return; }
   lastFrame = now;
 
-  kw::tick(now, fingerDown && !swallow, fingerX, fingerY);
+  kw::tick(now, fingers, swallow ? 0 : nFingers);
   panel->draw16bitRGBBitmap(0, 0, fb, LCD_WIDTH, LCD_HEIGHT);
 
   frames++;
   if (now - fpsT > 5000) {
     kw::Debug d = kw::debug();
-    Serial.printf("fps %.1f  held %.0f,%.0f  hp %d  block %d,%d  tuer %d  modus %d\n",
-                  frames * 1000.0f / (now - fpsT), d.hx, d.hy, d.hp, d.bi, d.bj, d.doorOpen, d.mode);
+    Serial.printf("fps %.1f  raum %d  held %.0f,%.0f  hp %d  finger %d  tuer %d  modus %d\n",
+                  frames * 1000.0f / (now - fpsT), d.room, d.hx, d.hy, d.hp, nFingers, d.doorOpen, d.mode);
     fpsT = now; frames = 0;
   }
 }
