@@ -705,17 +705,22 @@ static void drawClockUi() {
   textC("OK", 383, 3, C(0x0b1a18));
 }
 // Tipp im Uhr-Menue
-static void clockTap(int x, int y) {
-  clockUiIdleMs = 0;
-  if (y > 350 && x > 180 && x < 286) {
-    clockUi = false; clockChanged = true;
-    hours = setH + setM / 60.0f; clockSetHours = hours; clockSetMs = 0;   // sofort uebernehmen
-    return;
-  }
+// Pfeil-Zonen: links Stunden, rechts Minuten; oben +, unten -. Liefert 0 = kein Pfeil.
+static int clockZone(int x, int y) {
+  if (y < 120 || y > 350) return 0;
   bool left = x < 233, upper = y < 233;
-  if (y < 120) return;
-  if (left) setH = (setH + (upper ? 1 : 23)) % 24;
-  else setM = (setM + (upper ? 5 : 55)) % 60;
+  return left ? (upper ? 1 : 2) : (upper ? 3 : 4);
+}
+static void clockStep(int zone) {
+  clockUiIdleMs = 0;
+  if (zone == 1) setH = (setH + 1) % 24;
+  else if (zone == 2) setH = (setH + 23) % 24;
+  else if (zone == 3) setM = (setM + 1) % 60;
+  else if (zone == 4) setM = (setM + 59) % 60;
+}
+static void clockOk() {
+  clockUi = false; clockChanged = true;
+  hours = setH + setM / 60.0f; clockSetHours = hours; clockSetMs = 0;   // sofort uebernehmen
 }
 
 // ---------------------------------------------------------------- Eingabe
@@ -747,20 +752,39 @@ static void handleTap(int sx, int sy) {
   if (m == M_SKY) { spawnGull(x, y); return; }
 }
 
+static uint32_t nextRepeat = 0;
+static int heldZone = 0;
+
 static void input(uint32_t now, const Touch *pts, int n) {
   bool down = n > 0;
   int x = down ? pts[0].x : downX, y = down ? pts[0].y : downY;
-  if (down && !wasDown) { downMs = now; downX = x; downY = y; longFired = false; }
+  bool pressStartedInMenu = false;
+  if (down && !wasDown) {
+    downMs = now; downX = x; downY = y; longFired = false;
+    // im Uhr-Menue zaehlt ein Pfeil sofort beim Aufsetzen, Halten zaehlt weiter
+    if (clockUi) {
+      pressStartedInMenu = true;
+      heldZone = clockZone(x, y);
+      if (heldZone) { clockStep(heldZone); nextRepeat = now + 450; }
+    }
+  }
+  if (clockUi && down && heldZone && !pressStartedInMenu && now >= nextRepeat) {
+    clockStep(heldZone);
+    uint32_t held = now - downMs;
+    nextRepeat = now + (held > 2500 ? 40 : (held > 1200 ? 90 : 160));   // immer schneller
+  }
   if (down && !longFired && !clockUi && now - downMs > 1500) {
     int dx = x - downX, dy = y - downY;
     if (dx * dx + dy * dy < 30 * 30) {
-      longFired = true; clockUi = true; clockUiIdleMs = 0;
-      setH = (int)hours % 24; setM = ((int)(hours * 60) % 60) / 5 * 5;
+      longFired = true; clockUi = true; clockUiIdleMs = 0; heldZone = 0;
+      setH = (int)hours % 24; setM = (int)(hours * 60) % 60;
     }
   }
   if (!down && wasDown && !longFired) {
-    if (clockUi) clockTap(downX, downY);
-    else if (now - downMs < 600) handleTap(downX, downY);
+    if (clockUi) {
+      if (!heldZone && downY > 350 && downX > 180 && downX < 286) clockOk();
+      heldZone = 0;
+    } else if (now - downMs < 600) handleTap(downX, downY);
   }
   wasDown = down;
 }

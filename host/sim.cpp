@@ -71,13 +71,16 @@ int main(int argc, char **argv) {
   run(1.7f, &t, 1); run(0.1f);
   printf("Uhr-Menue nach langem Druecken: %s\n", debug().clockUi ? "offen" : "ZU");
   if (!debug().clockUi) fails++;
-  tap(150, 160); run(0.1f);
+  tap(150, 160); run(0.1f);                 // Stunde +1
+  tap(300, 160); tap(300, 160); run(0.1f);  // Minute +1 +1
+  Touch hold{300, 160}; run(2.0f, &hold, 1); run(0.1f);   // gedrueckt halten: zaehlt schnell weiter
   save("09_uhr_stellen");
+  tap(300, 300); run(0.1f);                 // Minute -1
   tap(233, 380); run(0.1f);
   int h, m;
   bool ch = takeClockChange(h, m);
   printf("Uhr gestellt: %s %02d:%02d, Anzeige %.2f h\n", ch ? "ja" : "NEIN", h, m, debug().hours);
-  if (!ch || h != 11 || debug().clockUi) fails++;
+  if (!ch || h != 11 || m < 12 || m > 40 || debug().clockUi) fails++;
 
   printf(fails ? "FEHLER: %d\n" : "ALLES OK\n", fails);
   return fails ? 1 : 0;
