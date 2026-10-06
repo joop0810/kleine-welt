@@ -1,16 +1,19 @@
-// Kleine Welt - Prototyp: vier verbundene runde Raeume.
-//   1 Eingang     - Schleimlinge besiegen -> Tuer auf
-//   2 Block       - Steinblock auf die Platte schieben
-//   3 Zwei Platten- zwei Bloecke, zwei Platten, Schleimlinge
-//   4 Schatz      - Truhe oeffnen = Ende des Prototyps
+// Kleine Welt - "Cala": eine kleine Mittelmeerbucht als Wohlfuehl-Deko fuer die Wand.
 //
-// Steuerung mit festen Zonen am Rand (Daumen verdecken den Held nicht):
-//   links unten  : Steuerkreuz (analog, Finger aufsetzen und schieben)
-//   rechts unten : Schwert-Knopf (Hieb in Blickrichtung, zielt leicht auf Gegner)
-//   gegen einen Block laufen -> Block rutscht eine Kachel weiter
+// Was passiert von selbst:
+//   - echter Tageslauf nach der Uhr (Sonnenauf-/untergang je nach Monat, wie auf Mallorca)
+//   - Himmel, Wolken, Moewen, Sterne, Mond; Meer mit Glitzern und Wellen am Strand
+//   - Segelboote und ein Fischerboot (Llaut) kreuzen durch die Bucht
+//   - abends Licht in der Finca, Lichterkette am Steg, Gluehwuermchen
+// Antippen (alles optional, nichts kann "kaputtgehen"):
+//   - Boot        -> faehrt zum Steg, legt eine Weile an
+//   - Meer        -> ein Fisch springt
+//   - Himmel      -> eine Moewe fliegt los
+//   - Finca       -> Licht an/aus
+//   - lange halten-> Uhr stellen
 //
-// Alle Grafik ist eigene Pixelkunst (16x16, 3-fach skaliert) bzw. wird im Code
-// erzeugt. Kein fremdes Material.
+// Gezeichnet wird in 233x233 "Kunstpixeln", doppelt skaliert. Alle Grafik ist
+// eigene Pixelkunst bzw. wird im Code erzeugt.
 #include "game.h"
 #include <math.h>
 #include <string.h>
@@ -19,229 +22,45 @@
 namespace kw {
 
 // ---------------------------------------------------------------- Grundlagen
-static uint16_t *fb = nullptr, *bg = nullptr;
+static uint16_t *fb = nullptr;
 static uint32_t rng = 1;
 static uint32_t rnd() { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; return rng; }
 static float frand(float a, float b) { return a + (b - a) * (rnd() % 10000) / 10000.0f; }
+static float clampf(float v, float a, float b) { return v < a ? a : (v > b ? b : v); }
 
 static constexpr uint16_t C(uint32_t rgb) {
   return (uint16_t)((((rgb >> 16) & 0xF8) << 8) | (((rgb >> 8) & 0xFC) << 3) | ((rgb & 0xFF) >> 3));
 }
-static constexpr uint16_t TRANSP = 0xF81F;  // Magenta = durchsichtig in Kunst-Puffern
-static constexpr int SC = 3;               // Pixelkunst wird 3-fach gezeichnet (16 px -> 48 px)
-
-static inline void unpack(uint16_t c, int &r, int &g, int &b) {
-  r = (c >> 11) << 3; g = ((c >> 5) & 63) << 2; b = (c & 31) << 3;
-}
+static inline void unpack(uint16_t c, int &r, int &g, int &b) { r = (c >> 11) << 3; g = ((c >> 5) & 63) << 2; b = (c & 31) << 3; }
 static inline uint16_t pack(int r, int g, int b) {
-  if (r < 0) r = 0; if (g < 0) g = 0; if (b < 0) b = 0;
-  if (r > 255) r = 255; if (g > 255) g = 255; if (b > 255) b = 255;
+  r = r < 0 ? 0 : (r > 255 ? 255 : r); g = g < 0 ? 0 : (g > 255 ? 255 : g); b = b < 0 ? 0 : (b > 255 ? 255 : b);
   return (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
 }
 static inline uint16_t mix(uint16_t a, uint16_t b, float t) {
   int r1, g1, b1, r2, g2, b2; unpack(a, r1, g1, b1); unpack(b, r2, g2, b2);
   return pack(r1 + (int)((r2 - r1) * t), g1 + (int)((g2 - g1) * t), b1 + (int)((b2 - b1) * t));
 }
-static inline void px(int x, int y, uint16_t c) {
-  if ((unsigned)x < (unsigned)SCR && (unsigned)y < (unsigned)SCR) fb[y * SCR + x] = c;
+static inline uint16_t mixRGB(uint32_t a, uint32_t b, float t) {
+  int r1 = a >> 16, g1 = (a >> 8) & 255, b1 = a & 255, r2 = b >> 16, g2 = (b >> 8) & 255, b2 = b & 255;
+  return pack(r1 + (int)((r2 - r1) * t), g1 + (int)((g2 - g1) * t), b1 + (int)((b2 - b1) * t));
 }
+static inline uint32_t lerpRGB(uint32_t a, uint32_t b, float t) {
+  int r1 = a >> 16, g1 = (a >> 8) & 255, b1 = a & 255, r2 = b >> 16, g2 = (b >> 8) & 255, b2 = b & 255;
+  return ((uint32_t)(r1 + (r2 - r1) * t) << 16) | ((uint32_t)(g1 + (g2 - g1) * t) << 8) | (uint32_t)(b1 + (b2 - b1) * t);
+}
+static uint32_t hash2(int a, int b, int c) {
+  uint32_t h = (uint32_t)a * 374761393u + (uint32_t)b * 668265263u + (uint32_t)c * 2246822519u;
+  h = (h ^ (h >> 13)) * 1274126177u; return h ^ (h >> 16);
+}
+// Bildschirm (volle Aufloesung) - nur fuer Text und Uhr-Menue
 static void rect(int x, int y, int w, int h, uint16_t c) {
-  if (x < 0) { w += x; x = 0; } if (y < 0) { h += y; y = 0; }
-  if (x + w > SCR) w = SCR - x; if (y + h > SCR) h = SCR - y;
+  if (x < 0) { w += x; x = 0; }
+  if (y < 0) { h += y; y = 0; }
+  if (x + w > SCR) w = SCR - x;
+  if (y + h > SCR) h = SCR - y;
   for (int j = 0; j < h; j++) { uint16_t *p = fb + (y + j) * SCR + x; for (int i = 0; i < w; i++) p[i] = c; }
 }
-// "dicker Pixel": SCxSC, damit alles im selben Pixelraster bleibt
-static inline void fat(int x, int y, uint16_t c) { rect(x - ((x % SC) + SC) % SC, y - ((y % SC) + SC) % SC, SC, SC, c); }
-static void darkenRect(int x, int y, int w, int h, float k) {
-  for (int j = y; j < y + h; j++) for (int i = x; i < x + w; i++)
-    if ((unsigned)i < (unsigned)SCR && (unsigned)j < (unsigned)SCR) fb[j * SCR + i] = mix(fb[j * SCR + i], 0, k);
-}
-
-// ---------------------------------------------------------------- Farben
 static const uint16_t K_OUT = C(0x1b1424);
-static uint16_t colorOf(char ch) {
-  switch (ch) {
-    case 'k': return K_OUT;
-    case 'h': return C(0x2fa39a);  // Kapuze
-    case 'H': return C(0x1f6e6a);
-    case 'i': return C(0x7fdccc);
-    case 's': return C(0xf2c79b);  // Haut
-    case 'S': return C(0xd39a70);
-    case 'o': return C(0xf08a3c);  // Schal
-    case 'O': return C(0xb85a24);
-    case 't': return C(0xe8dcc0);  // Kittel
-    case 'T': return C(0xb9a98a);
-    case 'b': return C(0x6e4630);  // Stiefel
-    case 'w': return C(0xffffff);
-    case 'p': return C(0xe0507a);  // Schleimling
-    case 'P': return C(0xff9ab8);
-    case 'q': return C(0x9e2f55);
-    case 'r': return C(0xe8434f);  // Herz
-    case 'R': return C(0xffb0b5);
-    case 'e': return C(0x3d3350);
-    case 'y': return C(0xffe27a);  // Flamme
-    case 'Y': return C(0xff8a2a);
-    case 'n': return C(0x7a5236);  // Holz
-    case 'N': return C(0x4a2e20);
-    default: return TRANSP;
-  }
-}
-
-// ---------------------------------------------------------------- Pixelkunst
-// Held: unten A/B, oben A/B, rechts A/B (links = gespiegelt)
-static const char *HERO_DOWN[16] = {
-  "................", ".....kkkkkk.....", "...kkhhiihhkk...", "..khhhiihhhhhk..",
-  "..khhhhhhhhhhk..", ".khhhssssssShhk.", ".khhsssssssSShk.", ".kHhskssssksShk.",
-  ".kHhsssssssSShk.", "..kHooooooooHk..", "..kOoooooooOOk..", ".kSkttttttttkSk.",
-  ".kkktttTTtttkkk.", "...kTtttttttTk..", "...kbbk..kbbk...", "...kkkk..kkkk..."};
-static const char *HERO_UP[16] = {
-  "................", ".....kkkkkk.....", "...kkhhiihhkk...", "..khhhiihhhhhk..",
-  "..khhhhhhhhhhk..", ".khhhhhhhhhhhhk.", ".khhhhiihhhhhhk.", ".kHhhhhhhhhhhHk.",
-  ".kHHhhhhhhhhHHk.", "..kHHHHHHHHHHk..", "..kOoooooooOOk..", ".kSkttttttttkSk.",
-  ".kkktttTTtttkkk.", "...kTtttttttTk..", "...kbbk..kbbk...", "...kkkk..kkkk..."};
-static const char *HERO_SIDE[16] = {
-  "................", "....kkkkkk......", "..kkhhiihhkk....", ".khhhiihhhhhk...",
-  ".khhhhhhhhhhhk..", "kHhhhhhhsssssk..", "kHhhhhhssssssk..", "kHHhhhhssskssk..",
-  ".kHhhhhsssssk...", "..kOOooooooOk...", ".kOOk.kttttSk...", "..kk.ktttttSk...",
-  ".....kttTTtk....", ".....kTtttTk....", ".....kbbkbbk....", ".....kkkkkkk...."};
-static const char *FEET_B_FRONT[2] = {"....kbbkkbbk....", "....kkkkkkkk...."};
-static const char *FEET_B_SIDE[2] = {"....kbbk.kbbk...", "....kkkk.kkkk..."};
-
-static const char *SLIME_A[16] = {
-  "................", "................", "................", "................",
-  "................", "................", "......kkkk......", "....kkPPppkk....",
-  "...kPPpppppqk...", "..kPppppppppqk..", "..kpwwppppwwpk..", ".kppwkppppwkpqk.",
-  ".kpppppppppppqk.", ".kqppppppppppqk.", "..kqqqqqqqqqqk..", "...kkkkkkkkkk..."};
-static const char *SLIME_B[16] = {
-  "................", "................", "................", "................",
-  "................", "................", "................", "................",
-  "......kkkk......", "...kkkPPppkkk...", "..kPPpppppppqk..", ".kPpwwppppwwpqk.",
-  "kppwkppppppwkpqk", "kqppppppppppppqk", ".kqqqqqqqqqqqqk.", "..kkkkkkkkkkkk.."};
-
-static const char *TORCH_A[16] = {
-  "................", "................", "........y.......", ".......yy.......",
-  ".......yYy......", "......yYYYy.....", "......YYyYY.....", "......YyyyY.....",
-  ".......YyY......", "......knnnnk....", ".......kNNk.....", "........nn......",
-  "........nn......", ".......kNNk.....", "................", "................"};
-static const char *TORCH_B[16] = {
-  "................", "................", ".......y........", ".......yy.......",
-  "......yYy.......", "......yYYYy.....", ".....YYyYY......", "......YyyyY.....",
-  ".......YyY......", "......knnnnk....", ".......kNNk.....", "........nn......",
-  "........nn......", ".......kNNk.....", "................", "................"};
-
-static const char *HEART[8] = {".kk.kk..", "kRrkrrk.", "kRrrrrk.", "krrrrrk.",
-                               ".krrrk..", "..krk...", "...k....", "........"};
-
-struct Art { int w, h; uint16_t px[256]; };
-static Art aHeroDown[2], aHeroUp[2], aHeroSide[2], aSlime[2], aTorch[2];
-static Art aHeartFull, aHeartHalf, aHeartEmpty, aBlock, aPlateUp, aPlateDown, aPillar;
-
-static void artFromAscii(Art &a, const char *const *rows, int w, int h) {
-  a.w = w; a.h = h;
-  for (int y = 0; y < h; y++) {
-    const char *r = rows[y];
-    for (int x = 0; x < w; x++) a.px[y * w + x] = colorOf(r[x]);
-  }
-}
-
-// Kunst zeichnen, SC-fach skaliert. flash = alle Pixel weiss (Treffer).
-static void drawArt(const Art &a, int x, int y, bool flip = false, bool flash = false) {
-  for (int j = 0; j < a.h; j++)
-    for (int i = 0; i < a.w; i++) {
-      uint16_t c = a.px[j * a.w + (flip ? a.w - 1 - i : i)];
-      if (c == TRANSP) continue;
-      if (flash) c = 0xFFFF;
-      rect(x + i * SC, y + j * SC, SC, SC, c);
-    }
-}
-
-// Prozedurale Kunst: Block, Platte, Saeule
-static void buildProcArt() {
-  // Steinblock: helle Oberseite, dunkle Vorderseite, eingemeisseltes Zeichen
-  const uint16_t top = C(0xa69cb5), topL = C(0xc4bcd0), topD = C(0x8a8199);
-  const uint16_t front = C(0x6e6580), frontD = C(0x534b63);
-  Art &b = aBlock; b.w = b.h = 16;
-  for (int y = 0; y < 16; y++) for (int x = 0; x < 16; x++) {
-    uint16_t c;
-    bool edge = x == 0 || x == 15 || y == 0 || y == 15;
-    if (edge) c = K_OUT;
-    else if (y >= 11) c = (y == 14 || x == 14) ? frontD : front;
-    else if (y == 1 || x == 1) c = topL;
-    else if (x == 14 || y == 10) c = topD;
-    else c = top;
-    // Zeichen: kleine Raute in der Mitte der Oberseite
-    int dx = x - 8, dy = y - 6; if (dx < 0) dx = -dx - 1; if (dy < 0) dy = -dy - 1;
-    if (y < 11 && !edge && dx + dy == 2) c = topD;
-    if (y >= 11 && !edge && (x == 4 || x == 11) && y == 12) c = frontD;
-    b.px[y * 16 + x] = c;
-  }
-  // Bodenplatte: goldene Platte, gedrueckt = tiefer und dunkler
-  for (int pressed = 0; pressed < 2; pressed++) {
-    Art &p = pressed ? aPlateDown : aPlateUp; p.w = p.h = 16;
-    const uint16_t g = pressed ? C(0x8a6a2a) : C(0xd1a94e), gl = pressed ? C(0x9e7c36) : C(0xf0cf7c);
-    const uint16_t gd = pressed ? C(0x5e481c) : C(0x8a6a2a), rim = C(0x2a2236);
-    for (int y = 0; y < 16; y++) for (int x = 0; x < 16; x++) {
-      uint16_t c = TRANSP;
-      if (x >= 1 && x <= 14 && y >= 1 && y <= 14) c = rim;
-      int o = pressed ? 1 : 0;
-      if (x >= 3 && x <= 12 && y >= 3 + o && y <= 12) {
-        c = g;
-        if (x == 3 || y == 3 + o) c = gl;
-        if (x == 12 || y == 12) c = gd;
-        int dx = 2 * x - 15, dy = 2 * y - 15 - o; int d2 = dx * dx + dy * dy;
-        if (d2 >= 9 && d2 <= 25) c = gd;  // Ring in der Mitte
-      }
-      p.px[y * 16 + x] = c;
-    }
-  }
-  // Saeule: runder Kopf, Schaft mit Licht von links oben
-  Art &s = aPillar; s.w = s.h = 16;
-  const uint16_t sl = C(0xc9c0d8), sm = C(0x9a90ab), sd = C(0x6b6280), sdd = C(0x4c455c);
-  for (int y = 0; y < 16; y++) for (int x = 0; x < 16; x++) {
-    uint16_t c = TRANSP;
-    float fx = x + 0.5f - 8, fy = y + 0.5f - 5.5f;
-    bool cap = fx * fx / 42.0f + fy * fy / 20.0f <= 1.0f;
-    bool capO = fx * fx / 52.0f + fy * fy / 27.0f <= 1.0f;
-    bool shaft = x >= 2 && x <= 13 && y >= 5 && y <= 14;
-    bool shaftO = x >= 1 && x <= 14 && y >= 5 && y <= 15;
-    if (shaftO || capO) c = K_OUT;
-    if (shaft) c = x <= 4 ? sm : (x >= 11 ? sdd : sd);
-    if (shaft && (y == 9 || y == 10) ) c = (x <= 4) ? sd : sdd;  // Ring
-    if (cap) c = (fx + fy < -2) ? sl : sm;
-    if (cap && fx * fx / 12.0f + fy * fy / 5.0f <= 1.0f) c = sd;  // Mulde oben
-    s.px[y * 16 + x] = c;
-  }
-}
-
-static void buildArt() {
-  for (int f = 0; f < 2; f++) {
-    const char *rows[16];
-    for (int y = 0; y < 16; y++) rows[y] = HERO_DOWN[y];
-    if (f) { rows[14] = FEET_B_FRONT[0]; rows[15] = FEET_B_FRONT[1]; }
-    artFromAscii(aHeroDown[f], rows, 16, 16);
-    for (int y = 0; y < 16; y++) rows[y] = HERO_UP[y];
-    if (f) { rows[14] = FEET_B_FRONT[0]; rows[15] = FEET_B_FRONT[1]; }
-    artFromAscii(aHeroUp[f], rows, 16, 16);
-    for (int y = 0; y < 16; y++) rows[y] = HERO_SIDE[y];
-    if (f) { rows[14] = FEET_B_SIDE[0]; rows[15] = FEET_B_SIDE[1]; }
-    artFromAscii(aHeroSide[f], rows, 16, 16);
-  }
-  artFromAscii(aSlime[0], SLIME_A, 16, 16);
-  artFromAscii(aSlime[1], SLIME_B, 16, 16);
-  artFromAscii(aTorch[0], TORCH_A, 16, 16);
-  artFromAscii(aTorch[1], TORCH_B, 16, 16);
-  artFromAscii(aHeartFull, HEART, 8, 8);
-  aHeartHalf = aHeartFull; aHeartEmpty = aHeartFull;
-  const uint16_t red = colorOf('r'), redL = colorOf('R'), em = colorOf('e');
-  for (int i = 0; i < 64; i++) {
-    uint16_t c = aHeartFull.px[i];
-    if (c == red || c == redL) {
-      aHeartEmpty.px[i] = em;
-      if ((i % 8) >= 4) aHeartHalf.px[i] = em;
-    }
-  }
-  buildProcArt();
-}
 
 // ---------------------------------------------------------------- Schrift 5x7
 static const uint8_t FONT[][5] = {
@@ -301,941 +120,753 @@ static void text(const char *s, int cy, int sc, uint16_t c) {
   textRaw(s, x, y, sc, c);
 }
 
-// ---------------------------------------------------------------- Raeume
-constexpr int TILE = 16 * SC, N = 11, OFF = (SCR - N * TILE) / 2;  // 11x11 Kacheln a 48 px, Mitte = (5,5)
-constexpr float HB = 15;   // halbe Breite Held/Schleimling
-constexpr float BH = 23;   // halbe Breite Block
-enum Tile : uint8_t { T_WALL, T_FLOOR, T_PILLAR, T_DOOR, T_PLATE, T_CHEST };
-static inline int cellOf(float p) { return (int)floorf((p - OFF) / TILE); }
-static inline float cellC(int i) { return OFF + i * TILE + TILE / 2.0f; }
 
-// Tueren sitzen immer in der Mitte oben (Norden) bzw. unten (Sueden)
-static const int DN_I = 5, DN_J = 1, DS_I = 5, DS_J = 9;
-enum Cond : uint8_t { C_NONE, C_ENEMIES, C_PLATES };
-struct Cell { int8_t i, j; };
-struct RoomDef {
-  const char *name;
-  int8_t north, south;          // Zielraum oder -1
-  Cond cond;                    // was die Nordtuer oeffnet
-  Cell pillars[6]; uint8_t nPillars;
-  Cell plates[2]; uint8_t nPlates;
-  Cell blocks[2]; uint8_t nBlocks;
-  Cell slimes[4]; uint8_t nSlimes;
-  bool chest; Cell chestAt;
-  uint32_t floorA, floorB;      // Bodenfarben (jeder Raum etwas anders)
+
+// ---------------------------------------------------------------- Kunstpixel-Ebene
+constexpr int L = 233;               // logische Aufloesung
+constexpr int HOR = 92;              // Horizont
+enum Mat : uint8_t { M_SKY, M_SEA, M_ROCK, M_SCRUB, M_SAND, M_WET, M_OBJ, M_WINDOW, M_JETTY };
+static uint16_t *base = nullptr;     // Tagesfarben der festen Szene
+static uint8_t *mat = nullptr;       // Material je Kunstpixel
+static uint16_t *lf = nullptr;       // aktuelles Bild in Kunstpixeln
+
+static inline void lp(int x, int y, uint16_t c) { if ((unsigned)x < (unsigned)L && (unsigned)y < (unsigned)L) lf[y * L + x] = c; }
+static inline void bp(int x, int y, uint16_t c, Mat m = M_OBJ) {
+  if ((unsigned)x < (unsigned)L && (unsigned)y < (unsigned)L) { base[y * L + x] = c; mat[y * L + x] = m; }
+}
+// nur auf Himmel oder Meer zeichnen (Felsen stehen davor)
+static inline void lpBehind(int x, int y, uint16_t c) {
+  if ((unsigned)x < (unsigned)L && (unsigned)y < (unsigned)L) { uint8_t m = mat[y * L + x]; if (m == M_SKY || m == M_SEA) lf[y * L + x] = c; }
+}
+static inline void lpSky(int x, int y, uint16_t c) {
+  if ((unsigned)x < (unsigned)L && (unsigned)y < (unsigned)L && mat[y * L + x] == M_SKY) lf[y * L + x] = c;
+}
+
+// ---------------------------------------------------------------- Landschaft
+// Linke Landzunge mit Finca-Plateau, rechte kleinere Felsnase; der Strand liegt unten
+static float topL(int x) { return x < 54 ? 73 + 1.5f * sinf(x * 0.35f) : 73 + (x - 54) * 1.25f; }
+static float coastL(int y) { return y < HOR ? 70 : 70 + (y - HOR) * 0.05f + 2.5f * sinf(y * 0.37f) + 1.5f * sinf(y * 1.1f); }
+static float topR(int x) { return 97 + (L - x) * 0.22f + 1.5f * sinf(x * 0.5f); }
+static float coastR(int y) { return 176 - (y - 100) * 0.07f + 2 * sinf(y * 0.45f) + sinf(y * 1.3f); }
+static float beachY(int x) { float u = (x - 116) / 116.0f; return 180 - 26 * u * u; }
+
+static bool landL(int x, int y) { return x <= coastL(y) && y >= topL(x) && y < beachY(x) + 3; }
+static bool landR(int x, int y) { return x >= 170 && x >= coastR(y) && y >= topR(x) && y < beachY(x) + 3; }
+// weiches Rauschen fuer Felsen und Bewuchs
+static float vnoise(float x, float y, int seed) {
+  int xi = (int)floorf(x), yi = (int)floorf(y); float fx = x - xi, fy = y - yi;
+  auto h = [&](int a, int b) { return (hash2(a, b, seed) & 1023) / 1023.0f; };
+  float a = h(xi, yi), b = h(xi + 1, yi), c = h(xi, yi + 1), d = h(xi + 1, yi + 1);
+  fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+  return (a + (b - a) * fx) + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fy;
+}
+
+static void disc(float cx, float cy, float r, uint16_t c, Mat m = M_OBJ) {
+  for (int y = (int)(cy - r); y <= (int)(cy + r); y++) for (int x = (int)(cx - r); x <= (int)(cx + r); x++)
+    if ((x - cx) * (x - cx) + (y - cy) * (y - cy) <= r * r) bp(x, y, c, m);
+}
+static void ell(float cx, float cy, float rx, float ry, uint16_t c, Mat m = M_OBJ) {
+  for (int y = (int)(cy - ry); y <= (int)(cy + ry); y++) for (int x = (int)(cx - rx); x <= (int)(cx + rx); x++) {
+    float u = (x - cx) / rx, v = (y - cy) / ry;
+    if (u * u + v * v <= 1) bp(x, y, c, m);
+  }
+}
+
+// Aleppo-Kiefer: flacher Schirm auf schraegem Stamm
+static void pine(int x, int y, float s) {
+  const uint16_t trunk = C(0x5a3a26), dk = C(0x2b4a2c), md = C(0x3d6b37), lt = C(0x5c8a44);
+  for (int k = 0; k < (int)(14 * s); k++) { bp(x + k / 4, y - k, trunk); bp(x + k / 4 + 1, y - k, trunk); }
+  int tx = x + (int)(14 * s) / 4, ty = y - (int)(14 * s);
+  ell(tx, ty, 11 * s, 4 * s, dk);
+  ell(tx - 1, ty - 1, 9 * s, 3 * s, md);
+  for (int k = 0; k < 12; k++) { int px = tx - (int)(8 * s) + (int)(hash2(x, k, 3) % (int)(16 * s + 1)); bp(px, ty - (int)(2 * s) + (int)(hash2(k, y, 4) % 2), lt); }
+}
+static void cypress(int x, int y, int h) {
+  const uint16_t dk = C(0x22402a), md = C(0x2f5a34);
+  for (int j = 0; j < h; j++) {
+    float v = (float)j / h; int w = (int)(3.2f * sinf(v * 3.1416f) + 0.6f);
+    for (int i = -w; i <= w; i++) bp(x + i, y - j, i > 0 ? dk : md);
+  }
+}
+static void bush(int x, int y, int r) {
+  ell(x, y, r + 1, r * 0.7f, C(0x3e5e30)); ell(x - 1, y - 1, r * 0.8f, r * 0.5f, C(0x557a3c));
+}
+
+static void finca() {
+  const uint16_t wall = C(0xf3ede0), wallS = C(0xd9cfbd), roof = C(0xc8643c), roofD = C(0x8e3f24), door = C(0x6e4630);
+  // Haupthaus
+  for (int y = 59; y <= 73; y++) for (int x = 24; x <= 50; x++) bp(x, y, x >= 46 ? wallS : wall);
+  for (int y = 53; y <= 59; y++) {           // Ziegeldach
+    int in = (59 - y);
+    for (int x = 22 + in; x <= 52 - in; x++) bp(x, y, (y % 2) ? roof : roofD);
+  }
+  // kleiner Turm
+  for (int y = 48; y <= 59; y++) for (int x = 27; x <= 32; x++) bp(x, y, x >= 31 ? wallS : wall);
+  for (int x = 26; x <= 33; x++) { bp(x, 47, roof); bp(x, 46, roofD); }
+  for (int x = 28; x <= 31; x++) bp(x, 45, roof);
+  // Fenster (nachts erleuchtet) und Tuer mit Bogen
+  const uint16_t win = C(0x2b3a5c);
+  int wins[][2] = {{36, 63}, {42, 63}, {29, 51}, {26, 64}};
+  for (auto &w : wins) for (int y = 0; y < 4; y++) for (int x = 0; x < 2; x++) bp(w[0] + x, w[1] + y, win, M_WINDOW);
+  for (int y = 67; y <= 73; y++) for (int x = 31; x <= 34; x++) bp(x, y, door);
+  bp(31, 67, wall); bp(34, 67, wall);
+  // Terrasse mit Mauer und Bougainvillea
+  for (int x = 50; x <= 58; x++) { bp(x, 72, wallS); bp(x, 73, wallS); }
+  for (int k = 0; k < 14; k++) bp(50 + (int)(hash2(k, 1, 9) % 9), 69 + (int)(hash2(k, 2, 9) % 3), (k & 1) ? C(0xd63a8c) : C(0xb02a6e));
+  cypress(20, 74, 22);
+}
+
+static void jetty() {
+  const uint16_t pl = C(0xb68a5a), plD = C(0x7a5536), post = C(0x4a3424);
+  int x0 = 136, x1 = 145, ytop = 152, ybot = (int)beachY(140) + 2;
+  for (int y = ytop; y <= ybot; y++) for (int x = x0; x <= x1; x++) bp(x, y, (y % 3 == 0) ? plD : pl, M_JETTY);
+  for (int y = ytop + 2; y <= ybot; y += 7) { bp(x0 - 1, y, post, M_JETTY); bp(x1 + 1, y, post, M_JETTY); bp(x0 - 1, y + 1, post, M_JETTY); bp(x1 + 1, y + 1, post, M_JETTY); }
+  for (int x = x0; x <= x1; x++) bp(x, ytop - 1, plD, M_JETTY);
+}
+
+static void parasol(int x, int y, uint32_t c1, uint32_t c2) {
+  // Schatten auf dem Sand
+  for (int j = -2; j <= 2; j++) for (int i = -9; i <= 9; i++)
+    if (i * i / 81.0f + j * j / 6.0f <= 1) { int X = x + 3 + i, Y = y + 1 + j; if ((unsigned)X < (unsigned)L && (unsigned)Y < (unsigned)L) base[Y * L + X] = mix(base[Y * L + X], C(0x8a7050), 0.35f); }
+  // Handtuch
+  for (int j = -1; j <= 2; j++) for (int i = 3; i <= 13; i++) bp(x + i, y + j, ((i / 2) % 2) ? C(c1) : C(0xf6f0e6));
+  // Stange
+  for (int k = 0; k < 14; k++) bp(x, y - k, C(0xeae2d0));
+  // Schirm: Halbkuppel mit Streifen, gezackter Saum
+  for (int dy = 0; dy <= 5; dy++) {
+    float v = (5 - dy) / 6.0f; int w = (int)(10 * sqrtf(1 - v * v) + 0.5f);
+    for (int i = -w; i <= w; i++) {
+      int sector = (int)floorf((i + 0.5f) * 5.0f / (w + 1) + 5);
+      uint16_t c = (sector & 1) ? C(c1) : C(c2);
+      if (dy == 5 && ((i + 20) % 3 == 0)) continue;
+      if (dy == 0 || i == -w) c = mix(c, 0xFFFF, 0.25f);
+      bp(x + i, y - 19 + dy, c);
+    }
+  }
+  bp(x, y - 20, C(0xeae2d0));
+}
+
+static void palm(int bx, int by) {
+  const uint16_t tr = C(0x8a6a44), trD = C(0x5e4630), fr = C(0x3f7a3a), frL = C(0x6aa64c);
+  float tx = bx, ty = by;
+  for (int k = 0; k < 70; k++) {                   // geschwungener Stamm
+    float v = k / 70.0f;
+    tx = bx - 18 * v * v; ty = by - 70 * v;
+    for (int i = -2; i <= 1; i++) bp((int)tx + i, (int)ty, (k % 4 == 0) ? trD : tr);
+  }
+  int cx = (int)tx, cy = (int)ty;
+  const float ang[] = {-2.9f, -2.4f, -1.8f, -1.2f, -0.6f, -0.1f, 0.4f};
+  for (float a : ang) {
+    for (int k = 0; k < 30; k++) {
+      float d = k * 1.0f, droop = k * k * 0.028f;
+      int x = cx + (int)(cosf(a) * d), y = cy + (int)(sinf(a) * d * 0.6f + droop);
+      bp(x, y, frL); bp(x, y + 1, fr);
+      if (k > 3 && k < 27) {           // Fiedern beidseitig, nach aussen kuerzer
+        int len = k < 14 ? 3 : 2;
+        for (int q = 1; q <= len; q++) { bp(x - (k & 1), y - q, fr); bp(x + (k & 1), y + 1 + q, fr); }
+      }
+    }
+  }
+  ell(cx, cy + 2, 3, 2, C(0x6e4a2a));   // Kokosnuesse
+}
+
+static void buildScene() {
+  for (int y = 0; y < L; y++) for (int x = 0; x < L; x++) {
+    uint16_t c; Mat m;
+    uint32_t h = hash2(x, y, 11);
+    bool lL = landL(x, y), lR = landR(x, y);
+    float by = beachY(x);
+    if (lL || lR) {
+      float top = lL ? topL(x) : topR(x);
+      float edge = lL ? coastL(y) - x : x - coastR(y);
+      float n = vnoise(x / 6.0f, y / 4.0f, 21), g = vnoise(x / 5.0f, y / 5.0f, 37);
+      // Kalkstein: helle und dunkle Flecken, Kante zur Bucht im Licht
+      uint32_t lime = n > 0.62f ? 0xd2b48c : (n > 0.38f ? 0xbea07c : 0x9e8264);
+      if (edge < 2.5f) lime = 0xe2caa2;
+      if (edge >= 2.5f && edge < 4) lime = 0x8a6e54;
+      if ((h & 31) == 0) lime = 0x7c6450;
+      c = C(lime); m = M_ROCK;
+      // Bewuchs: oben dicht, am Hang in Flecken
+      float depth = y - top;
+      float cover = depth < 5 ? 1.0f : (depth < 30 ? 0.62f - depth * 0.006f : 0.42f);
+      if (g > 1 - cover * 0.75f && edge > 3) { c = (h & 3) ? C(0x5e7c36) : C(0x76963f); m = M_SCRUB; }
+      if (y >= by - 1) { c = C(0x9e8264); m = M_ROCK; }
+    } else if (y < HOR) {
+      c = 0; m = M_SKY;
+    } else if (y < by) {
+      // Meer: tief am Horizont, tuerkis zum Strand
+      float v = clampf((y - HOR) / (by - HOR), 0, 1);
+      uint32_t col = v < 0.55f ? lerpRGB(0x1f5f8f, 0x2a8fb8, v / 0.55f) : lerpRGB(0x2a8fb8, 0x45c9c4, (v - 0.55f) / 0.45f);
+      if (by - y < 7) col = lerpRGB(col, 0x8fe3d2, (7 - (by - y)) / 7.0f);
+      if ((h & 31) == 0) col = lerpRGB(col, 0xffffff, 0.12f);
+      c = C(col); m = M_SEA;
+    } else if (y < by + 3) {
+      c = C(0xc9b080); m = M_WET;
+    } else {
+      uint32_t s = (h & 7) == 0 ? 0xdcc497 : 0xead6aa;
+      c = C(s); m = M_SAND;
+    }
+    base[y * L + x] = c; mat[y * L + x] = m;
+  }
+  // Fernes Inselchen am Horizont
+  for (int x = 86; x <= 122; x++) {
+    float u = (x - 104) / 18.0f; int hgt = (int)(7 * (1 - u * u) + (x > 106 ? 2 * sinf(x * 0.6f) : 0));
+    for (int k = 0; k <= hgt; k++) if (mat[(HOR - k) * L + x] == M_SKY) bp(x, HOR - k, C(0x7f98b0), M_ROCK);
+  }
+  finca();
+  bush(62, 84, 3); bush(14, 77, 4); bush(56, 100, 3);
+  pine(58, 80, 1.0f); pine(64, 96, 0.8f);
+  pine(198, 106, 0.85f); pine(216, 100, 1.05f);
+  bush(186, 113, 3); bush(226, 108, 3);
+  jetty();
+  parasol(64, 200, 0xd8403c, 0xf6f0e6);
+  parasol(96, 206, 0x2f6fb0, 0xf6f0e6);
+  parasol(170, 202, 0xe0a030, 0xf6f0e6);
+  palm(214, 236);
+}
+
+// ---------------------------------------------------------------- Zeit und Licht
+static float hours = 12.0f;          // 0..24, Ortszeit
+static int month = 7;
+static float testHours = -1;
+static uint32_t clockSetMs = 0;
+static float clockSetHours = 12.0f;
+// Sonnenauf- und -untergang (Ortszeit, gerundet wie auf Mallorca)
+static const float SUNRISE[12] = {8.1f, 7.75f, 7.2f, 7.4f, 6.85f, 6.5f, 6.65f, 7.1f, 7.6f, 8.0f, 7.6f, 8.0f};
+static const float SUNSET[12] = {17.7f, 18.25f, 18.75f, 20.25f, 20.75f, 21.25f, 21.25f, 20.8f, 20.1f, 19.3f, 17.75f, 17.5f};
+
+struct Light {
+  float day, golden, dawn;            // 0..1
+  int mr, mg, mb;                     // Farbmultiplikatoren (256 = 1.0)
+  uint32_t skyTop, skyMid, skyHor;
 };
-static const RoomDef ROOMS[] = {
-  {"EINGANG", 1, -1, C_ENEMIES, {{4, 2}, {6, 2}}, 2, {}, 0, {}, 0, {{3, 4}, {7, 4}}, 2, false, {0, 0},
-   0x5b4e6e, 0x564a68},
-  {"DER BLOCK", 2, 0, C_PLATES, {{4, 2}, {6, 2}, {3, 6}}, 3, {{6, 7}}, 1, {{3, 4}}, 1, {{6, 5}}, 1, false, {0, 0},
-   0x4f5a6e, 0x4a5468},
-  {"ZWEI PLATTEN", 3, 1, C_PLATES, {{4, 2}, {6, 2}, {5, 6}}, 3, {{2, 4}, {8, 5}}, 2, {{4, 5}, {6, 4}}, 2,
-   {{3, 7}, {7, 7}}, 2, false, {0, 0}, 0x5e4d5c, 0x584857},
-  {"SCHATZKAMMER", -1, 2, C_NONE, {{3, 4}, {7, 4}, {3, 6}, {7, 6}}, 4, {}, 0, {}, 0, {}, 0, true, {5, 4},
-   0x625a44, 0x5c543f},
+static Light light;
+
+static void computeLight() {
+  float sr = SUNRISE[(month + 11) % 12], ss = SUNSET[(month + 11) % 12];
+  float h = hours;
+  float up = clampf((h - (sr - 0.5f)) / 1.0f, 0, 1), down = clampf(((ss + 0.6f) - h) / 1.1f, 0, 1);
+  float d = fminf(up, down);
+  float gold = fmaxf(0, 1 - fabsf(h - (ss - 0.1f)) / 1.1f);
+  float dawn = fmaxf(0, 1 - fabsf(h - (sr + 0.2f)) / 0.9f);
+  light.day = d; light.golden = gold; light.dawn = dawn;
+  // Land und Meer: Nacht blaeulich dunkel, goldene Stunde warm
+  float r = 0.26f + 0.74f * d, g = 0.29f + 0.71f * d, b = 0.45f + 0.55f * d;
+  r *= 1 + 0.10f * gold + 0.05f * dawn; g *= 1 - 0.12f * gold; b *= 1 - 0.30f * gold - 0.08f * dawn;
+  light.mr = (int)(r * 256); light.mg = (int)(g * 256); light.mb = (int)(b * 256);
+  uint32_t top = lerpRGB(0x060914, 0x3d8fd6, d), mid = lerpRGB(0x0c1430, 0x7fbde8, d), hor = lerpRGB(0x1c2a48, 0xc4e6f2, d);
+  top = lerpRGB(top, 0x44508e, gold * 0.8f); mid = lerpRGB(mid, 0xe58a96, gold * 0.85f); hor = lerpRGB(hor, 0xffa858, gold);
+  top = lerpRGB(top, 0x5a78b8, dawn * 0.6f); mid = lerpRGB(mid, 0xe8a8b8, dawn * 0.7f); hor = lerpRGB(hor, 0xffcf96, dawn * 0.85f);
+  light.skyTop = top; light.skyMid = mid; light.skyHor = hor;
+}
+static inline uint16_t lit(uint16_t c) {
+  int r, g, b; unpack(c, r, g, b);
+  return pack((r * light.mr) >> 8, (g * light.mg) >> 8, (b * light.mb) >> 8);
+}
+
+// ---------------------------------------------------------------- Bewohner
+struct Boat {
+  int kind;            // 0 grosses Segelboot, 1 kleines Segelboot, 2 Llaut (Fischerboot)
+  float x, y, vx;      // y = Wasserlinie
+  int state;           // 0 faehrt, 1 legt an, 2 liegt, 3 legt ab
+  float t;
 };
-constexpr int NROOMS = sizeof(ROOMS) / sizeof(ROOMS[0]);
-static const int TORCHES[2][2] = {{3, 1}, {7, 1}};
+static Boat boats[3];
+struct Cloud { float x, y, w; };
+static Cloud clouds[4];
+struct Gull { bool on; float x, y, vx, vy, t; };
+static Gull gulls[4];
+struct Fish { bool on; float x, y, t; };
+static Fish fish[3];
+struct Ring { bool on; float x, y, t; };
+static Ring rings[4];
+struct Star { uint8_t x, y, ph; };
+static Star stars[70];
+struct Fly { float x, y, ph; };
+static Fly flies[10];
+static bool fincaLight = true;
+static float t_ = 0;
 
-static int room = 0;
-static uint8_t map_[N][N];
-static inline uint8_t tileAt(int i, int j) {
-  if (i < 0 || j < 0 || i >= N || j >= N) return T_WALL;
-  return map_[j][i];
-}
-static inline bool walkable(uint8_t t) { return t == T_FLOOR || t == T_PLATE; }
-
-static void buildMap(const RoomDef &r) {
-  for (int j = 0; j < N; j++) for (int i = 0; i < N; i++) {
-    int di = i - 5, dj = j - 5;
-    map_[j][i] = di * di + dj * dj <= 13 ? T_FLOOR : T_WALL;   // Radius ~3,6 Kacheln
-  }
-  if (r.north >= 0) map_[DN_J][DN_I] = T_DOOR;
-  if (r.south >= 0) map_[DS_J][DS_I] = T_DOOR;
-  for (int k = 0; k < r.nPlates; k++) map_[r.plates[k].j][r.plates[k].i] = T_PLATE;
-  for (int k = 0; k < r.nPillars; k++) map_[r.pillars[k].j][r.pillars[k].i] = T_PILLAR;
-  if (r.chest) map_[r.chestAt.j][r.chestAt.i] = T_CHEST;
-}
-
-static uint32_t hash2(int a, int b, int c) {
-  uint32_t h = (uint32_t)a * 374761393u + (uint32_t)b * 668265263u + (uint32_t)c * 2246822519u;
-  h = (h ^ (h >> 13)) * 1274126177u; return h ^ (h >> 16);
-}
-
-// Raum einmal vorrendern: Boden, Waende, Saeulen, Licht, runder Rand
-static void buildBackground(const RoomDef &r) {
-  uint16_t *save = fb; fb = bg;
-  const uint16_t fBase[2] = {C(r.floorA), C(r.floorB)};
-  const uint16_t fL = mix(fBase[0], 0xFFFF, 0.12f), fD = mix(fBase[0], 0, 0.18f), fS = mix(fBase[0], 0, 0.38f);
-  const uint16_t wTop = C(0x241b2f), wTop2 = C(0x2c2238);
-  const uint16_t brick = C(0x4a3b5f), brickL = C(0x5d4b75), brickD = C(0x3a2e4b), mortar = C(0x1d1628);
-  for (int j = 0; j < N; j++) for (int i = 0; i < N; i++) {
-    int x0 = OFF + i * TILE, y0 = OFF + j * TILE;
-    uint8_t t = map_[j][i];
-    bool wall = t == T_WALL || t == T_DOOR;
-    uint8_t below = tileAt(i, j + 1);
-    bool face = wall && below != T_WALL && below != T_DOOR;
-    for (int y = 0; y < 16; y++) for (int x = 0; x < 16; x++) {
-      uint16_t c;
-      uint32_t h = hash2(i * 16 + x, j * 16 + y, 7 + room);
-      if (wall) {
-        if (face) {
-          int row = y / 4, bx = (x + (row & 1) * 4) % 8;
-          if (y % 4 == 3 || bx == 7) c = mortar;
-          else if (y % 4 == 0) c = brickL;
-          else if (y % 4 == 2 || bx == 6) c = brickD;
-          else c = brick;
-          if (y >= 14) c = mortar;
-        } else {
-          c = (h & 7) == 0 ? wTop2 : wTop;
-        }
-      } else {
-        uint16_t base = fBase[hash2(i, j, 1 + room) & 1];
-        bool split = hash2(i, j, 2 + room) & 1;
-        bool seam = (x == 15 || y == 15) || (x == 7 && y < 8 && split);
-        if (seam) c = fS;
-        else if (x == 0 || y == 0 || (x == 8 && y < 8 && split)) c = fL;
-        else if ((h & 31) == 0) c = fD;
-        else if ((h & 31) == 1) c = fL;
-        else c = base;
-        uint8_t up = tileAt(i, j - 1);
-        if ((up == T_WALL || up == T_DOOR) && y < 3) c = mix(c, 0, 0.45f - y * 0.12f);
-      }
-      rect(x0 + x * SC, y0 + y * SC, SC, SC, c);
-    }
-    if (t == T_PILLAR) {
-      darkenRect(x0 + 9, y0 + 33, 42, 15, 0.35f);
-      drawArt(aPillar, x0, y0);
-    }
-  }
-  for (int y = 0; y < SCR; y++) for (int x = 0; x < SCR; x++) {
-    float dx = x - 233.0f, dy = y - 233.0f, rr = sqrtf(dx * dx + dy * dy);
-    uint16_t c = bg[y * SCR + x];
-    float k = 0.22f * (rr / 233.0f) * (rr / 233.0f);
-    if (rr > 212) k += (rr - 212) / 21.0f;
-    if (k > 1) k = 1;
-    c = mix(c, 0, k);
-    for (auto &tc : TORCHES) {
-      float tx = cellC(tc[0]), ty = cellC(tc[1]) + 4;
-      float d = sqrtf((x - tx) * (x - tx) + (y - ty) * (y - ty));
-      if (d < 120) c = mix(c, C(0xff9a40), 0.16f * (1 - d / 120.0f) * (1 - d / 120.0f));
-    }
-    bg[y * SCR + x] = c;
-  }
-  fb = save;
-}
-
-// Truhe (geschlossen / offen)
-static Art aChest[2];
-static void buildChestArt() {
-  const uint16_t wood = C(0x9a6236), woodL = C(0xc4874e), woodD = C(0x5e3a20), gold = C(0xf0cf7c), goldD = C(0xb08a3a);
-  for (int o = 0; o < 2; o++) {
-    Art &a = aChest[o]; a.w = a.h = 16;
-    for (int y = 0; y < 16; y++) for (int x = 0; x < 16; x++) {
-      uint16_t c = TRANSP;
-      int top = o ? 6 : 3;
-      if (x >= 1 && x <= 14 && y >= top && y <= 14) {
-        bool edge = x == 1 || x == 14 || y == top || y == 14;
-        c = edge ? K_OUT : wood;
-        if (!edge && (y == top + 1)) c = woodL;
-        if (!edge && (x == 13 || y == 13)) c = woodD;
-        if (!edge && (x == 4 || x == 11)) c = goldD;        // Beschlaege
-        if (!o && y == 7) c = K_OUT;                          // Deckelfuge
-        if (!o && !edge && x >= 7 && x <= 8 && y >= 7 && y <= 9) c = gold;  // Schloss
-      }
-      if (o && x >= 2 && x <= 13 && y >= 7 && y <= 8) c = K_OUT;          // offen: dunkles Inneres
-      if (o && x >= 2 && x <= 13 && y >= 2 && y <= 5) {                   // aufgeklappter Deckel
-        c = (y == 2 || x == 2 || x == 13) ? K_OUT : woodD;
-      }
-      a.px[y * 16 + x] = c;
-    }
+static const char *BOAT_BIG[13] = {
+  "......k.....", "......kw....", ".....Wkww...", ".....Wkwww..", "....WWkwww..", "....WWkwwww.",
+  "...WWWkwwww.", "...WWWkwwwww", "..WWWWkwwwww", "......k.....", "bbbbbbbbbbbb", ".hhhhhhhhhh.", "..hhhhhhhh.."};
+static const char *BOAT_SMALL[8] = {"...k...", "..Wkw..", "..Wkww.", ".WWkww.", ".WWkwww", "...k...", "bbbbbbb", ".hhhhh."};
+static const char *BOAT_LLAUT[7] = {"....kttt....", "....tWWt....", "....tttt....", "nnnnnnnnnnnn", "gggggggggggg", ".nnnnnnnnnn.", "..NNNNNNNN.."};
+static uint16_t boatCol(char ch) {
+  switch (ch) {
+    case 'k': return C(0x3a3030); case 'w': return C(0xfbf8f0); case 'W': return C(0xd0d8e4);
+    case 'b': return C(0x2f6fb0); case 'h': return C(0xf2efe8); case 't': return C(0xe8e2d6);
+    case 'n': return C(0xb07a46); case 'N': return C(0x6e4630); case 'g': return C(0x3c8a6a);
+    default: return 0;
   }
 }
+static void boatSize(int kind, int &w, int &h) { if (kind == 0) { w = 12; h = 13; } else if (kind == 1) { w = 7; h = 8; } else { w = 12; h = 7; } }
+static const char *const *boatArt(int kind) { return kind == 0 ? BOAT_BIG : (kind == 1 ? BOAT_SMALL : BOAT_LLAUT); }
 
-// ---------------------------------------------------------------- Zustand
-enum Mode { M_PLAY, M_WIN, M_DEAD };
-enum Face { F_DOWN, F_UP, F_RIGHT, F_LEFT };
-static Mode mode;
-static uint32_t lastMs = 0, startMs = 0, endMs = 0;
-static float endT = 0;
-static float t_ = 0, freeze = 0, shake = 0;
-static float fade = 0;           // >0: Raumwechsel laeuft
-static int fadeTo = -1, fadeFrom = -1;
+static const float DOCK_X = 154, DOCK_Y = 158;   // rechts am Stegende
 
-struct Hero {
-  float x, y; int hp; Face face;
-  bool moving; float walkT; int frame;
-  float atkT; float atkAng; bool atkHit[4]; float cool;
-  float inv; float kbT, kbx, kby;
-  float pushT; int pushDi, pushDj, pushBlock;
-  float deadT;
-} hero;
-
-struct Slime {
-  float x, y; int hp; int state;  // 0 warten, 1 huepfen, 2 getroffen, 3 zerplatzt, 4 weg
-  float t, dur; float fx, fy, tx, ty; float hz; float flash; int anim;
-};
-struct Block {
-  int i, j, fi, fj, si, sj; float t; bool moving;
-  float stuckT, sinkT;
-};
-struct Pickup { bool on; float x, y, t; };
-
-// Was ein Raum sich merkt, wenn man ihn verlaesst
-struct RoomState {
-  bool visited, northOpen, chestOpen;
-  Slime slimes[4]; int nSlimes;
-  Block blocks[2]; int nBlocks;
-};
-static RoomState rs[NROOMS];
-static RoomState *cur = nullptr;
-static Pickup hearts[4];
-static float doorN = 0, doorS = 1;   // 0 zu .. 1 offen
-static bool northWanted = false;
-static char msg[40]; static float msgT = 0;
-static float hintT = 0;
-static float chestT = -1;            // Truhe wird geoeffnet
-
-struct Particle { float x, y, vx, vy, life, max; uint16_t c; };
-static Particle parts[64];
-static void spawn(float x, float y, int n, uint16_t c, float sp, float life) {
-  for (int k = 0; k < n; k++) for (auto &p : parts) if (p.life <= 0) {
-    float a = frand(0, 6.2832f), v = frand(sp * 0.3f, sp);
-    p = {x, y, cosf(a) * v, sinf(a) * v, life, life, c}; break;
+static void initWorld() {
+  boats[0] = {0, 40, 132, 4.5f, 0, 0};
+  boats[1] = {1, 150, 102, -2.2f, 0, 0};
+  boats[2] = {2, 190, 146, -3.5f, 0, 0};
+  for (int k = 0; k < 4; k++) clouds[k] = {frand(0, L), frand(22, 62), frand(14, 30)};
+  for (auto &s : stars) {
+    int x, y;
+    do { x = rnd() % L; y = rnd() % (HOR - 4); } while (mat[y * L + x] != M_SKY);
+    s = {(uint8_t)x, (uint8_t)y, (uint8_t)(rnd() & 255)};
   }
-}
-static void say(const char *s, float sec) { strncpy(msg, s, sizeof msg - 1); msg[sizeof msg - 1] = 0; msgT = sec; }
-
-static void blockPos(const Block &b, float &x, float &y) {
-  float t = b.moving ? b.t : 1.0f;
-  float e = t * t * (3 - 2 * t);
-  x = cellC(b.fi) + (cellC(b.i) - cellC(b.fi)) * e;
-  y = cellC(b.fj) + (cellC(b.j) - cellC(b.fj)) * e;
-}
-static bool blockOnCell(int i, int j, int except = -1) {
-  for (int k = 0; k < cur->nBlocks; k++) {
-    if (k == except) continue;
-    const Block &b = cur->blocks[k];
-    if (b.sinkT > 0) continue;
-    if ((b.i == i && b.j == j) || (b.moving && b.fi == i && b.fj == j)) return true;
-  }
-  return false;
-}
-static bool plateWeighted(const Cell &p) {
-  for (int k = 0; k < cur->nBlocks; k++) {
-    const Block &b = cur->blocks[k];
-    if (!b.moving && b.sinkT <= 0 && b.i == p.i && b.j == p.j) return true;
-  }
-  return mode == M_PLAY && cellOf(hero.x) == p.i && cellOf(hero.y) == p.j;
+  for (auto &f : flies) f = {frand(12, 66), frand(74, 104), frand(0, 6.28f)};
+  for (auto &g : gulls) g.on = false;
+  for (auto &f : fish) f.on = false;
+  for (auto &r : rings) r.on = false;
 }
 
-// ---------------------------------------------------------------- Kollision
-static bool solidTile(int i, int j) {
-  uint8_t t = tileAt(i, j);
-  if (t == T_DOOR) return (j == DN_J ? doorN : doorS) < 0.95f;
-  return !walkable(t);
-}
-static bool boxHits(float x, float y, float h, bool withBlocks) {
-  int i0 = cellOf(x - h), i1 = cellOf(x + h - 0.01f), j0 = cellOf(y - h), j1 = cellOf(y + h - 0.01f);
-  for (int j = j0; j <= j1; j++) for (int i = i0; i <= i1; i++) if (solidTile(i, j)) return true;
-  if (withBlocks) for (int k = 0; k < cur->nBlocks; k++) {
-    const Block &b = cur->blocks[k];
-    if (b.sinkT > 0) continue;
-    float bx, by; blockPos(b, bx, by);
-    if (fabsf(x - bx) < h + BH && fabsf(y - by) < h + BH) return true;
-  }
-  return false;
-}
-static void moveBox(float &x, float &y, float dx, float dy, float h, bool withBlocks, bool *hitX, bool *hitY) {
-  // steckt die Box schon in einem Block (z.B. nach einem Schubser), darf sie sich frei herausbewegen
-  if (withBlocks && boxHits(x, y, h, true) && !boxHits(x, y, h, false)) withBlocks = false;
-  int steps = (int)(fmaxf(fabsf(dx), fabsf(dy)) / 4) + 1;
-  float sx = dx / steps, sy = dy / steps;
-  bool hx = false, hy = false;
-  for (int s = 0; s < steps; s++) {
-    if (!hx) { if (boxHits(x + sx, y, h, withBlocks)) hx = true; else x += sx; }
-    if (!hy) { if (boxHits(x, y + sy, h, withBlocks)) hy = true; else y += sy; }
-  }
-  if (hitX) *hitX = hx;
-  if (hitY) *hitY = hy;
-}
-
-// Kann der Block noch irgendeine Platte erreichen? (Breitensuche; fuer einen Schub
-// muss das Feld dahinter begehbar und das Feld davor frei sein)
-static bool blockCanReachPlate(int si, int sj) {
-  const RoomDef &r = ROOMS[room];
-  static uint8_t seen[N][N]; memset(seen, 0, sizeof seen);
-  static int q[N * N][2]; int qh = 0, qt = 0;
-  q[qt][0] = si; q[qt][1] = sj; qt++; seen[sj][si] = 1;
-  const int D[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
-  while (qh < qt) {
-    int i = q[qh][0], j = q[qh][1]; qh++;
-    for (int k = 0; k < r.nPlates; k++) if (r.plates[k].i == i && r.plates[k].j == j) return true;
-    for (auto &d : D) {
-      int ni = i + d[0], nj = j + d[1], bi = i - d[0], bj = j - d[1];
-      if (!walkable(tileAt(ni, nj)) || !walkable(tileAt(bi, bj)) || seen[nj][ni]) continue;
-      seen[nj][ni] = 1; q[qt][0] = ni; q[qt][1] = nj; qt++;
-    }
-  }
-  return false;
-}
-
-static void tryPush(int k, int di, int dj) {
-  Block &b = cur->blocks[k];
-  int ni = b.i + di, nj = b.j + dj;
-  if (!walkable(tileAt(ni, nj)) || blockOnCell(ni, nj, k)) return;
-  for (int s = 0; s < cur->nSlimes; s++) {
-    const Slime &sl = cur->slimes[s];
-    if (sl.state < 3 && cellOf(sl.x) == ni && cellOf(sl.y) == nj) return;
-  }
-  b.fi = b.i; b.fj = b.j; b.i = ni; b.j = nj; b.t = 0; b.moving = true;
-  float bx, by; blockPos(b, bx, by);
-  spawn(bx - di * 21, by + 18, 5, C(0x8a8199), 60, 0.35f);
-}
-
-// ---------------------------------------------------------------- Raumwechsel
-static void initRoomState(int r) {
-  const RoomDef &d = ROOMS[r];
-  RoomState &s = rs[r];
-  memset(&s, 0, sizeof s);
-  s.visited = true;
-  s.nSlimes = d.nSlimes;
-  for (int k = 0; k < d.nSlimes; k++) {
-    Slime &sl = s.slimes[k];
-    sl.x = cellC(d.slimes[k].i); sl.y = cellC(d.slimes[k].j); sl.hp = 2; sl.t = 1.0f + k * 0.4f;
-  }
-  s.nBlocks = d.nBlocks;
-  for (int k = 0; k < d.nBlocks; k++) {
-    Block &b = s.blocks[k];
-    b.i = b.fi = b.si = d.blocks[k].i; b.j = b.fj = b.sj = d.blocks[k].j;
-  }
-  s.northOpen = d.cond == C_NONE;
-}
-
-// betritt Raum r; fromSouth = man kommt durch die Suedtuer herein (also von unten)
-static void enterRoom(int r, bool fromSouth) {
-  room = r;
-  if (!rs[r].visited) initRoomState(r);
-  cur = &rs[r];
-  buildMap(ROOMS[r]);
-  buildBackground(ROOMS[r]);
-  if (fromSouth) { hero.x = cellC(DS_I); hero.y = cellC(DS_J - 1) + 4; hero.face = F_UP; }
-  else { hero.x = cellC(DN_I); hero.y = cellC(DN_J + 1); hero.face = F_DOWN; }
-  doorN = cur->northOpen ? 1 : 0; doorS = 1; northWanted = cur->northOpen;
-  for (auto &h : hearts) h.on = false;
-  for (auto &p : parts) p.life = 0;
-  hero.atkT = -1; hero.kbT = 0; hero.pushT = 0;
-  say(ROOMS[r].name, 1.6f);
-}
-
-static void newGame(uint32_t now) {
-  mode = M_PLAY; startMs = now; t_ = 0; freeze = 0; shake = 0; fade = 0; chestT = -1;
-  memset(&hero, 0, sizeof hero);
-  hero.hp = 6; hero.atkT = -1;
-  memset(rs, 0, sizeof rs);
-  enterRoom(0, false);
-  hero.x = cellC(5); hero.y = cellC(7); hero.face = F_UP;
-  hintT = 6.0f;
-}
-
-// nach dem Umfallen: aktueller Raum von vorn, volle Herzen
-static void retryRoom() {
-  mode = M_PLAY; hero.hp = 6; hero.inv = 0; hero.deadT = 0;
-  bool fromSouth = ROOMS[room].south >= 0;
-  initRoomState(room);
-  enterRoom(room, fromSouth);
-  if (room == 0) { hero.x = cellC(5); hero.y = cellC(7); }
-}
-
-void begin(uint16_t *fbuf, uint16_t *bgbuf, uint32_t seed) {
-  fb = fbuf; bg = bgbuf; rng = seed ? seed : 1;
-  buildArt();
-  buildChestArt();
-  lastMs = 0;
-  newGame(0);
-}
-
-// ---------------------------------------------------------------- Steuerung
-// Feste Zonen am unteren Rand, damit die Daumen nichts vom Spiel verdecken.
-// Wichtige Dinge (Platten, Truhe) liegen nie in den Kacheln unter diesen Zonen.
-static const float PAD_X = 104, PAD_Y = 352, PAD_R = 54;     // Steuerkreuz
-static const float BTN_X = 362, BTN_Y = 352, BTN_R = 42;     // Schwert
-static float stickX = 0, stickY = 0;   // -1..1
-static bool padActive = false, btnDown = false, btnWas = false, anyWas = false;
-static float padFx = PAD_X, padFy = PAD_Y;  // Fingerposition fuer die Anzeige
-
-static void readInput(const Touch *pts, int n) {
-  bool pad = false, btn = false;
-  for (int k = 0; k < n; k++) {
-    float x = pts[k].x, y = pts[k].y;
-    float dpx = x - PAD_X, dpy = y - PAD_Y, dbx = x - BTN_X, dby = y - BTN_Y;
-    float dp = sqrtf(dpx * dpx + dpy * dpy), db = sqrtf(dbx * dbx + dby * dby);
-    // links von der Mitte und nicht ueber dem Knopf: alles zaehlt als Steuerkreuz,
-    // damit ein abgerutschter Daumen nicht ploetzlich stehen bleibt
-    if (db < BTN_R + 26) btn = true;
-    else if (dp < PAD_R + 60 || (padActive && x < 233)) {
-      pad = true; padFx = x; padFy = y;
-      float len = dp;
-      const float DEAD = 8, FULL = 34;
-      if (len < DEAD) { stickX = stickY = 0; }
-      else {
-        float m = fminf(1.0f, (len - DEAD) / (FULL - DEAD));
-        stickX = dpx / len * m; stickY = dpy / len * m;
-      }
-    }
-  }
-  padActive = pad;
-  if (!pad) { stickX = stickY = 0; padFx = PAD_X; padFy = PAD_Y; }
-  btnWas = btnDown; btnDown = btn;
-}
-
-// ---------------------------------------------------------------- Kampf
-static void startAttack() {
-  if (hero.cool > 0 || hero.kbT > 0) return;
-  float ang = hero.face == F_UP ? -1.5708f : hero.face == F_DOWN ? 1.5708f : hero.face == F_LEFT ? 3.1416f : 0.0f;
-  // leichte Zielhilfe: naechster Gegner in Reichweite und grob in Blickrichtung
-  float best = 1e9f;
-  for (int k = 0; k < cur->nSlimes; k++) {
-    const Slime &s = cur->slimes[k];
-    if (s.state >= 3) continue;
-    float dx = s.x - hero.x, dy = s.y - hero.y, d = sqrtf(dx * dx + dy * dy);
-    if (d > 80) continue;
-    float a = atan2f(dy, dx) - ang;
-    while (a > 3.1416f) a -= 6.2832f;
-    while (a < -3.1416f) a += 6.2832f;
-    if (fabsf(a) < 1.0f && d < best) { best = d; ang = atan2f(dy, dx); }
-  }
-  hero.atkT = 0; hero.atkAng = ang; hero.cool = 0.30f;
-  for (auto &h : hero.atkHit) h = false;
-}
-
-static void hurtHero(float fromX, float fromY) {
-  if (hero.inv > 0 || mode != M_PLAY) return;
-  hero.hp -= 1; hero.inv = 1.1f; hero.kbT = 0.16f;
-  float dx = hero.x - fromX, dy = hero.y - fromY, d = sqrtf(dx * dx + dy * dy) + 0.001f;
-  hero.kbx = dx / d * 420; hero.kby = dy / d * 420;
-  hero.atkT = -1;
-  shake = 0.18f; freeze = 0.06f;
-  if (hero.hp <= 0) { hero.hp = 0; mode = M_DEAD; hero.deadT = 0; endMs = lastMs; endT = t_; }
-}
-
-static void updateAttackHit() {
-  if (hero.atkT < 0.03f || hero.atkT > 0.17f) return;
-  for (int k = 0; k < cur->nSlimes; k++) {
-    Slime &s = cur->slimes[k];
-    if (hero.atkHit[k] || s.state >= 2) continue;
-    float dx = s.x - hero.x, dy = s.y - hero.y, d = sqrtf(dx * dx + dy * dy);
-    if (d > 75) continue;
-    float a = atan2f(dy, dx) - hero.atkAng;
-    while (a > 3.1416f) a -= 6.2832f;
-    while (a < -3.1416f) a += 6.2832f;
-    if (fabsf(a) > 1.45f && d > 27) continue;
-    hero.atkHit[k] = true;
-    s.hp--; s.flash = 0.18f; freeze = 0.07f; shake = 0.1f;
-    float kd = d + 0.001f;
-    s.fx = s.x; s.fy = s.y;
-    s.tx = s.x + dx / kd * 80; s.ty = s.y + dy / kd * 80;
-    s.state = 2; s.t = 0; s.dur = 0.2f; s.hz = 0;
-    spawn(s.x, s.y - 12, 6, colorOf('P'), 100, 0.3f);
+static void spawnGull(float x, float y) {
+  for (auto &g : gulls) if (!g.on) {
+    float dir = x < L / 2 ? 1 : -1;
+    g = {true, x, y, dir * frand(14, 22), frand(-3, -1), 0}; return;
   }
 }
-
-// ---------------------------------------------------------------- Update
-static void updateHero(float dt) {
-  if (hero.cool > 0) hero.cool -= dt;
-  if (hero.inv > 0) hero.inv -= dt;
-  if (btnDown && !btnWas) {
-    // Truhe direkt vor dem Held? Dann oeffnen statt zuschlagen
-    const RoomDef &r = ROOMS[room];
-    if (r.chest && !cur->chestOpen) {
-      float dx = cellC(r.chestAt.i) - hero.x, dy = cellC(r.chestAt.j) - hero.y;
-      if (dx * dx + dy * dy < 62 * 62) { cur->chestOpen = true; chestT = 0; hero.face = F_UP; return; }
-    }
-    startAttack();
-  }
-  if (hero.kbT > 0) {
-    hero.kbT -= dt;
-    moveBox(hero.x, hero.y, hero.kbx * dt, hero.kby * dt, HB, true, nullptr, nullptr);
-    hero.moving = false; return;
-  }
-  if (hero.atkT >= 0) {
-    hero.atkT += dt;
-    if (hero.atkT > 0.22f) hero.atkT = -1;
-  }
-  const float SPEED = 165;
-  float slow = hero.atkT >= 0 ? 0.25f : 1.0f;   // waehrend des Hiebs kaum bewegen
-  float vx = stickX * SPEED * slow, vy = stickY * SPEED * slow;
-  hero.moving = fabsf(stickX) + fabsf(stickY) > 0.05f;
-  if (!hero.moving) { hero.pushT = 0; return; }
-  if (hero.atkT < 0) {
-    if (fabsf(vx) > fabsf(vy)) hero.face = vx > 0 ? F_RIGHT : F_LEFT; else hero.face = vy > 0 ? F_DOWN : F_UP;
-  }
-
-  bool hx, hy;
-  moveBox(hero.x, hero.y, vx * dt, vy * dt, HB, true, &hx, &hy);
-
-  // Schieben: klar in eine Richtung gegen einen Block laufen
-  int di = 0, dj = 0;
-  if (fabsf(vx) > fabsf(vy) * 1.4f && hx) di = vx > 0 ? 1 : -1;
-  else if (fabsf(vy) > fabsf(vx) * 1.4f && hy) dj = vy > 0 ? 1 : -1;
-  int pk = -1;
-  if (di || dj) for (int k = 0; k < cur->nBlocks; k++) {
-    Block &b = cur->blocks[k];
-    if (b.moving || b.sinkT > 0) continue;
-    float bx, by; blockPos(b, bx, by);
-    float gx = (bx - hero.x) * di, gy = (by - hero.y) * dj;
-    bool p = (di && fabsf(hero.y - by) < 24 && gx > HB + BH - 2 && gx < HB + BH + 5) ||
-             (dj && fabsf(hero.x - bx) < 24 && gy > HB + BH - 2 && gy < HB + BH + 5);
-    if (p) {
-      pk = k;
-      float kk = fminf(1, dt * 8);   // sanft auf die Blockmitte ausrichten
-      if (di) moveBox(hero.x, hero.y, 0, (by - hero.y) * kk, HB, false, nullptr, nullptr);
-      else moveBox(hero.x, hero.y, (bx - hero.x) * kk, 0, HB, false, nullptr, nullptr);
-      break;
-    }
-  }
-  if (pk >= 0 && di == hero.pushDi && dj == hero.pushDj && pk == hero.pushBlock) {
-    hero.pushT += dt;
-    if (hero.pushT > 0.25f) { tryPush(pk, di, dj); hero.pushT = 0; }
-  } else { hero.pushT = pk >= 0 ? dt : 0; hero.pushDi = di; hero.pushDj = dj; hero.pushBlock = pk; }
-
-  hero.walkT += dt;
-  if (hero.walkT > 0.14f) { hero.walkT = 0; hero.frame ^= 1; }
+static void spawnFish(float x, float y) {
+  for (auto &f : fish) if (!f.on) { f = {true, x, y, 0}; break; }
+  for (auto &r : rings) if (!r.on) { r = {true, x, y, 0}; break; }
 }
 
-static void updateSlimes(float dt) {
-  for (int k = 0; k < cur->nSlimes; k++) {
-    Slime &s = cur->slimes[k];
-    if (s.flash > 0) s.flash -= dt;
-    switch (s.state) {
-      case 0: {
-        s.t -= dt;
-        s.anim = ((int)(t_ * 3.2f + k)) & 1;
-        if (s.t <= 0) {
-          float dx = hero.x - s.x, dy = hero.y - s.y, d = sqrtf(dx * dx + dy * dy);
-          float ang = (d < 300 && mode == M_PLAY) ? atan2f(dy, dx) + frand(-0.45f, 0.45f) : frand(0, 6.2832f);
-          float len = fminf(70, d > 45 ? d - 18 : 70);
-          s.fx = s.x; s.fy = s.y;
-          s.tx = s.x + cosf(ang) * len; s.ty = s.y + sinf(ang) * len;
-          s.state = 1; s.t = 0; s.dur = 0.42f;
-        }
-      } break;
-      case 1:
-      case 2: {
-        float px0 = s.x, py0 = s.y;
-        s.t += dt;
-        float p = fminf(1, s.t / s.dur);
-        float e = s.state == 2 ? 1 - (1 - p) * (1 - p) : p;
-        float wx = s.fx + (s.tx - s.fx) * e, wy = s.fy + (s.ty - s.fy) * e;
-        moveBox(s.x, s.y, wx - px0, wy - py0, HB - 1, true, nullptr, nullptr);
-        s.hz = s.state == 1 ? sinf(p * 3.1416f) * 24 : 0;
-        s.anim = s.state == 1 ? (p < 0.15f || p > 0.85f ? 1 : 0) : 1;
-        if (p >= 1) {
-          if (s.hp <= 0) {
-            s.state = 3; s.t = 0;
-            spawn(s.x, s.y - 12, 14, colorOf('p'), 160, 0.45f);
-            spawn(s.x, s.y - 12, 6, 0xFFFF, 90, 0.3f);
-            if (hero.hp < 6) for (auto &h : hearts) if (!h.on) { h = {true, s.x, s.y, 0}; break; }
-          } else {
-            s.state = 0; s.t = frand(0.6f, 1.3f);
-          }
-        }
-      } break;
-      case 3:
-        s.t += dt;
-        if (s.t > 0.45f) s.state = 4;
-        break;
-      default: break;
-    }
-    if (s.state <= 1 && s.hz < 9) {
-      float dx = hero.x - s.x, dy = hero.y - s.y;
-      if (dx * dx + dy * dy < 28 * 28) hurtHero(s.x, s.y);
-    }
-  }
-}
-
-static void updateBlocksAndDoors(float dt) {
-  for (int k = 0; k < cur->nBlocks; k++) {
-    Block &b = cur->blocks[k];
-    if (b.moving) {
-      b.t += dt / 0.2f;
-      if (b.t >= 1) {
-        b.t = 1; b.moving = false;
-        if (!blockCanReachPlate(b.i, b.j)) b.stuckT = 1.4f;
-      }
-    }
-    if (b.stuckT > 0) {
-      b.stuckT -= dt;
-      if (b.stuckT <= 0) { b.sinkT = 0.6f; say("DER BLOCK SITZT FEST...", 1.8f); }
-    }
-    if (b.sinkT > 0) {
-      float bx, by; blockPos(b, bx, by);
-      b.sinkT -= dt;
-      if (((int)(b.sinkT * 30)) % 3 == 0) spawn(bx, by + 15, 1, C(0x8a8199), 45, 0.3f);
-      if (b.sinkT <= 0) {
-        float sx = cellC(b.si), sy = cellC(b.sj);
-        if ((fabsf(hero.x - sx) < HB + BH && fabsf(hero.y - sy) < HB + BH) || blockOnCell(b.si, b.sj, k)) b.sinkT = 0.05f;
-        else {
-          b.i = b.fi = b.si; b.j = b.fj = b.sj; b.moving = false;
-          spawn(sx, sy, 10, C(0xc4bcd0), 90, 0.4f);
-        }
-      }
-    }
-  }
-  const RoomDef &r = ROOMS[room];
-  if (r.north >= 0) {
-    bool want = cur->northOpen;
-    if (r.cond == C_ENEMIES && !want) {
-      bool alive = false;
-      for (int k = 0; k < cur->nSlimes; k++) if (cur->slimes[k].state < 3) alive = true;
-      if (!alive) { cur->northOpen = want = true; }
-    } else if (r.cond == C_PLATES) {
-      want = true;
-      for (int k = 0; k < r.nPlates; k++) if (!plateWeighted(r.plates[k])) want = false;
-    }
-    if (want && !northWanted) { shake = 0.12f; say("KLACK! DIE TÜR IST OFFEN", 2.2f); }
-    if (!want && northWanted && doorN > 0.5f) say("DIE TÜR GEHT ZU...", 1.5f);
-    northWanted = want;
-    bool heroInDoor = cellOf(hero.x) == DN_I && cellOf(hero.y - HB) <= DN_J;
-    if (want || heroInDoor) doorN = fminf(1, doorN + dt / 0.45f);
-    else doorN = fmaxf(0, doorN - dt / 0.3f);
-  }
-}
-
-static void updateMisc(float dt) {
-  for (auto &p : parts) if (p.life > 0) {
-    p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.9f; p.vy *= 0.9f;
-  }
-  for (auto &h : hearts) if (h.on) {
-    h.t += dt;
-    if (h.t > 8) { h.on = false; continue; }
-    float dx = hero.x - h.x, dy = hero.y - h.y;
-    if (dx * dx + dy * dy < 32 * 32 && h.t > 0.3f) {
-      hero.hp = hero.hp + 2 > 6 ? 6 : hero.hp + 2; h.on = false;
-      spawn(hero.x, hero.y - 24, 8, colorOf('r'), 90, 0.4f);
-    }
-  }
-  if (msgT > 0) msgT -= dt;
-  if (hintT > 0) hintT -= dt;
-  if (shake > 0) shake -= dt;
-}
-
-// Ausgaenge pruefen und Raumwechsel mit Abblenden
-static void checkExits() {
-  const RoomDef &r = ROOMS[room];
-  if (r.north >= 0 && doorN >= 1 && cellOf(hero.x) == DN_I && hero.y < cellC(DN_J) + 15) {
-    fade = 0.5f; fadeFrom = room; fadeTo = r.north;
-  } else if (r.south >= 0 && cellOf(hero.x) == DS_I && hero.y > cellC(DS_J) - 15) {
-    fade = 0.5f; fadeFrom = room; fadeTo = r.south;
-  }
-}
-static void updateFade(float dt) {
-  float before = fade;
-  fade -= dt;
-  if (before > 0.25f && fade <= 0.25f) {
-    // Mitte des Abblendens: Raum tauschen. Nach Norden raus = im neuen Raum unten rein.
-    bool goingNorth = ROOMS[fadeFrom].north == fadeTo;
-    enterRoom(fadeTo, goingNorth);
-  }
-  if (fade < 0) fade = 0;
-}
-
-// ---------------------------------------------------------------- Zeichnen
-static void drawShadow(float x, float y, int w) {
-  int x0 = (int)x - w / 2, y0 = (int)y + 9;
-  for (int j = 0; j < 9; j++) {
-    float ry = (j - 4.0f) / 4.5f; int half = (int)(w / 2 * sqrtf(fmaxf(0, 1 - ry * ry)));
-    for (int i = -half; i < half; i++) {
-      int X = x0 + w / 2 + i, Y = y0 + j;
-      if ((unsigned)X < (unsigned)SCR && (unsigned)Y < (unsigned)SCR) fb[Y * SCR + X] = mix(fb[Y * SCR + X], 0, 0.4f);
-    }
-  }
-}
-
-static void drawHero(int ox, int oy) {
-  if (mode == M_DEAD) {
-    static const Face spin[4] = {F_DOWN, F_LEFT, F_UP, F_RIGHT};
-    Face f = hero.deadT < 0.8f ? spin[((int)(hero.deadT * 10)) & 3] : F_DOWN;
-    const Art &a = f == F_UP ? aHeroUp[0] : (f == F_DOWN ? aHeroDown[0] : aHeroSide[0]);
-    drawShadow(hero.x + ox, hero.y + oy, 33);
-    if (hero.deadT < 1.2f) drawArt(a, (int)hero.x - 24 + ox, (int)hero.y - 33 + oy, f == F_LEFT);
-    return;
-  }
-  if (hero.inv > 0 && ((int)(hero.inv * 16)) & 1) { drawShadow(hero.x + ox, hero.y + oy, 33); return; }
-  int fr = hero.moving ? hero.frame : 0;
-  const Art *a = &aHeroDown[fr]; bool flip = false;
-  if (hero.face == F_UP) a = &aHeroUp[fr];
-  else if (hero.face == F_RIGHT) a = &aHeroSide[fr];
-  else if (hero.face == F_LEFT) { a = &aHeroSide[fr]; flip = true; }
-  int bob = (hero.moving && fr) ? -SC : 0;
-  drawShadow(hero.x + ox, hero.y + oy, 33);
-  drawArt(*a, (int)hero.x - 24 + ox, (int)hero.y - 33 + bob + oy, flip);
-}
-
-static void drawSword(int ox, int oy) {
-  if (hero.atkT < 0) return;
-  float p = fminf(1, hero.atkT / 0.13f);
-  float a0 = hero.atkAng - 1.22f, a1 = hero.atkAng + 1.22f;
-  float curA = a0 + (a1 - a0) * p;
-  float cx = hero.x + ox, cy = hero.y - 12 + oy;
-  const uint16_t trail = C(0xfff3d6), steel = C(0xe6edf5), steelD = C(0x8c97a8), hilt = C(0x7a5236);
-  if (hero.atkT < 0.2f) {
-    float fd = hero.atkT < 0.13f ? 0 : (hero.atkT - 0.13f) / 0.07f;
-    for (float a = a0; a <= curA; a += 0.04f)
-      for (float r = 42; r <= 57; r += 2) {
-        int X = (int)(cx + cosf(a) * r), Y = (int)(cy + sinf(a) * r);
-        if ((unsigned)X >= (unsigned)SCR || (unsigned)Y >= (unsigned)SCR) continue;
-        float edge = (r < 45 || r > 54) ? 0.35f : 0.0f;
-        fat(X, Y, mix(trail, bg[Y * SCR + X], fminf(1, 0.2f + edge + fd * 0.8f)));
-      }
-  }
-  if (hero.atkT < 0.17f) {
-    float c = cosf(curA), s = sinf(curA);
-    for (float r = 9; r <= 60; r += 2) {
-      int X = (int)(cx + c * r), Y = (int)(cy + s * r);
-      if (r < 18) fat(X, Y, hilt);
-      else { fat(X + 2, Y + 2, steelD); fat(X, Y, steel); }
-    }
-    fat((int)(cx + c * 18 - s * 6), (int)(cy + s * 18 + c * 6), C(0xd1a94e));
-    fat((int)(cx + c * 18 + s * 6), (int)(cy + s * 18 - c * 6), C(0xd1a94e));
-  }
-}
-
-static void drawSlime(const Slime &s, int ox, int oy) {
-  if (s.state >= 3) return;
-  drawShadow(s.x + ox, s.y + oy, (int)(36 - s.hz * 0.5f));
-  drawArt(aSlime[s.anim], (int)s.x - 24 + ox, (int)(s.y - 33 - s.hz) + oy, false, s.flash > 0);
-}
-
-static void drawBlock(const Block &b, int ox, int oy) {
-  float bx, by; blockPos(b, bx, by);
-  if (b.sinkT > 0) {
-    float k = 1 - b.sinkT / 0.6f; int cut = (int)(k * 48);
-    for (int j = 0; j < 16; j++) for (int i = 0; i < 16; i++) {
-      int Y = (int)by - 24 + j * SC + cut;
-      if (Y + SC > (int)by + 24) continue;
-      uint16_t c = aBlock.px[j * 16 + i]; if (c == TRANSP) continue;
-      rect((int)bx - 24 + i * SC + ox, Y + oy, SC, SC, c);
-    }
-    return;
-  }
-  int jig = b.stuckT > 0 ? (((int)(b.stuckT * 30)) & 1) * SC : 0;
-  darkenRect((int)bx - 21 + ox, (int)by + 21 + oy, 48, 6, 0.35f);
-  drawArt(aBlock, (int)bx - 24 + ox + jig, (int)by - 24 + oy);
-}
-
-// Tuer in Kunst-Pixeln; Sued-Tuer ist gespiegelt (Gitter faehrt nach unten weg)
-static void drawDoor(int ci, int cj, float open, bool south, int ox, int oy) {
-  int x0 = OFF + ci * TILE + ox, y0 = OFF + cj * TILE + oy;
-  auto ar = [&](int ax, int ay, int aw, int ah, uint16_t c) {
-    if (south) ay = 16 - ay - ah;
-    rect(x0 + ax * SC, y0 + ay * SC, aw * SC, ah * SC, c);
-  };
-  const uint16_t dark = C(0x07050b), arch = C(0x6f5f86), archD = C(0x3e3150), iron = C(0x8a90a0), ironD = C(0x4b4f5c);
-  ar(0, 0, 16, 16, archD);
-  ar(2, 3, 12, 13, dark);
-  ar(1, 0, 14, 3, arch); ar(1, 2, 14, 1, archD);
-  int bars = (int)(13 * (1 - open) + 0.5f);
-  for (int b = 0; b < 4; b++) ar(3 + b * 3, 3, 1, bars, iron);
-  if (bars > 1) { ar(2, 3 + bars - 1, 12, 1, ironD); ar(2, 6, 12, 1, ironD); }
-  if (open > 0.9f) {
-    for (int y = 0; y < 13; y++) for (int x = 0; x < 12; x++)
-      if ((x + y + (int)(t_ * 4)) % 5 == 0) ar(2 + x, 3 + y, 1, 1, C(0x26203a));
-  }
-}
-
-static void drawTorches(int ox, int oy) {
-  for (auto &tc : TORCHES) {
-    int x0 = OFF + tc[0] * TILE + ox, y0 = OFF + tc[1] * TILE + oy;
-    drawArt(aTorch[((int)(t_ * 7) + tc[0]) & 1], x0 - 1, y0);
-  }
-}
-
-// Herzen oben links auf der Wand, weg von Steuerzonen und Tueren
-static void drawHUD() {
+static void updateBoats(float dt) {
   for (int k = 0; k < 3; k++) {
-    int v = hero.hp - k * 2;
-    const Art &a = v >= 2 ? aHeartFull : (v == 1 ? aHeartHalf : aHeartEmpty);
-    drawArt(a, 52 + k * 27, 112 - k * 12);
-  }
-}
-
-// Kreis fuellen/abdunkeln (fuer die Steuerzonen)
-static void tintCircle(float cx, float cy, float r, uint16_t c, float k) {
-  int y0 = (int)(cy - r), y1 = (int)(cy + r);
-  for (int y = y0; y <= y1; y++) {
-    if ((unsigned)y >= (unsigned)SCR) continue;
-    float dy = y - cy; float hw = sqrtf(fmaxf(0, r * r - dy * dy));
-    int x0 = (int)(cx - hw), x1 = (int)(cx + hw);
-    for (int x = x0; x <= x1; x++) if ((unsigned)x < (unsigned)SCR) fb[y * SCR + x] = mix(fb[y * SCR + x], c, k);
-  }
-}
-static void ring(float cx, float cy, float r, uint16_t c) {
-  for (float a = 0; a < 6.2832f; a += 0.02f) fat((int)(cx + cosf(a) * r), (int)(cy + sinf(a) * r), c);
-}
-
-static void drawControls() {
-  const uint16_t ink = C(0xf4efe6), dark = C(0x0b0810);
-  // Steuerkreuz: halbdurchsichtige Scheibe, Kreuz, Daumen-Knopf
-  tintCircle(PAD_X, PAD_Y, PAD_R, dark, 0.45f);
-  ring(PAD_X, PAD_Y, PAD_R, mix(ink, dark, 0.65f));
-  const int arm = 14, len = 40;
-  uint16_t cross = mix(ink, dark, padActive ? 0.55f : 0.7f);
-  for (int y = -len; y <= len; y += SC) for (int x = -arm / 2; x <= arm / 2; x += SC) {
-    fat((int)PAD_X + x, (int)PAD_Y + y, cross); fat((int)PAD_X + y, (int)PAD_Y + x, cross);
-  }
-  float kx = PAD_X + stickX * 30, ky = PAD_Y + stickY * 30;
-  tintCircle(kx, ky, 17, padActive ? C(0x2fa39a) : ink, padActive ? 0.9f : 0.35f);
-  // Schwert-Knopf
-  bool lit = btnDown || hero.atkT >= 0;
-  tintCircle(BTN_X, BTN_Y, BTN_R, lit ? C(0xf08a3c) : dark, lit ? 0.75f : 0.45f);
-  ring(BTN_X, BTN_Y, BTN_R, mix(ink, dark, lit ? 0.2f : 0.65f));
-  // kleines Schwert-Symbol (diagonal)
-  uint16_t sw = lit ? ink : mix(ink, dark, 0.35f);
-  for (int k = -15; k <= 12; k += 2) fat((int)BTN_X + k, (int)BTN_Y - k, sw);
-  for (int k = -6; k <= 6; k += 2) fat((int)BTN_X + 9 + k, (int)BTN_Y - 9 + k, C(0xd1a94e));
-  for (int k = 0; k <= 6; k += 2) fat((int)BTN_X + 12 + k, (int)BTN_Y - 12 + k, C(0x7a5236));
-}
-
-static void render() {
-  int ox = 0, oy = 0;
-  if (shake > 0) { ox = ((int)(rnd() % 5) - 2) * 1; oy = ((int)(rnd() % 5) - 2) * 1; }
-  for (int y = 0; y < SCR; y++) {
-    int sy = y - oy; if (sy < 0) sy = 0; if (sy >= SCR) sy = SCR - 1;
-    uint16_t *d = fb + y * SCR; const uint16_t *s = bg + sy * SCR;
-    if (ox >= 0) { memcpy(d + ox, s, (SCR - ox) * 2); for (int x = 0; x < ox; x++) d[x] = 0; }
-    else { memcpy(d, s - ox, (SCR + ox) * 2); for (int x = SCR + ox; x < SCR; x++) d[x] = 0; }
-  }
-  const RoomDef &r = ROOMS[room];
-  for (int k = 0; k < r.nPlates; k++)
-    drawArt(plateWeighted(r.plates[k]) ? aPlateDown : aPlateUp, OFF + r.plates[k].i * TILE + ox, OFF + r.plates[k].j * TILE + oy);
-  if (r.north >= 0) drawDoor(DN_I, DN_J, doorN, false, ox, oy);
-  if (r.south >= 0) drawDoor(DS_I, DS_J, doorS, true, ox, oy);
-  drawTorches(ox, oy);
-
-  // Figuren nach y sortiert
-  struct Ent { float y; int k, idx; } ents[12]; int ne = 0;
-  for (int k = 0; k < cur->nBlocks; k++) { float bx, by; blockPos(cur->blocks[k], bx, by); ents[ne++] = {by + 8, 0, k}; }
-  for (int k = 0; k < cur->nSlimes; k++) ents[ne++] = {cur->slimes[k].y, 1, k};
-  ents[ne++] = {hero.y, 2, 0};
-  for (int k = 0; k < 4; k++) if (hearts[k].on) ents[ne++] = {hearts[k].y, 3, k};
-  if (r.chest) ents[ne++] = {cellC(r.chestAt.j) + 8, 4, 0};
-  for (int a = 1; a < ne; a++) for (int b = a; b > 0 && ents[b].y < ents[b - 1].y; b--) { Ent t = ents[b]; ents[b] = ents[b - 1]; ents[b - 1] = t; }
-  for (int e = 0; e < ne; e++) {
-    switch (ents[e].k) {
-      case 0: drawBlock(cur->blocks[ents[e].idx], ox, oy); break;
-      case 1: drawSlime(cur->slimes[ents[e].idx], ox, oy); break;
-      case 2: drawHero(ox, oy); drawSword(ox, oy); break;
-      case 3: {
-        const Pickup &h = hearts[ents[e].idx];
-        int hop = (int)(fabsf(sinf(h.t * 5)) * 9 * fmaxf(0, 1 - h.t));
-        bool blink = h.t > 6 && ((int)(h.t * 8) & 1);
-        if (!blink) drawArt(aHeartFull, (int)h.x - 12 + ox, (int)h.y - 21 - hop + oy);
+    Boat &b = boats[k];
+    switch (b.state) {
+      case 0:
+        b.x += b.vx * dt;
+        b.y += sinf(t_ * 0.3f + k) * 0.02f;
+        if (b.x > L + 20) b.x = -20;
+        if (b.x < -20) b.x = L + 20;
+        break;
+      case 1: {   // zum Steg
+        float dx = DOCK_X - b.x, dy = DOCK_Y - b.y, d = sqrtf(dx * dx + dy * dy);
+        float sp = fminf(9.0f, 2 + d * 0.4f);
+        if (d < 0.6f) { b.state = 2; b.t = 0; b.x = DOCK_X; b.y = DOCK_Y; }
+        else { b.x += dx / d * sp * dt; b.y += dy / d * sp * dt; b.vx = dx > 0 ? fabsf(b.vx) : -fabsf(b.vx); }
       } break;
-      case 4: {
-        int x0 = OFF + r.chestAt.i * TILE + ox, y0 = OFF + r.chestAt.j * TILE + oy;
-        darkenRect(x0 + 6, y0 + 42, 40, 6, 0.35f);
-        drawArt(aChest[cur->chestOpen ? 1 : 0], x0, y0);
-        if (chestT >= 0) {  // Schatz steigt auf
-          float up = fminf(1, chestT / 0.8f);
-          int sx = x0 + 24, sy = y0 + 6 - (int)(up * 40);
-          for (int k = -3; k <= 3; k++) { fat(sx + k * 3, sy, C(0xffe27a)); fat(sx, sy + k * 3, C(0xffe27a)); }
-          fat(sx, sy, 0xFFFF);
-        }
-      } break;
+      case 2:
+        b.t += dt;
+        if (b.t > 90) { b.state = 3; b.t = 0; b.vx = 4.0f; }
+        break;
+      case 3:     // ablegen, zurueck in die Spur
+        b.x += b.vx * dt;
+        b.y += ((k == 0 ? 132 : 146) - b.y) * dt * 0.4f;
+        if (b.x > L + 20) { b.state = 0; b.x = -20; }
+        break;
     }
   }
-  for (auto &p : parts) if (p.life > 0) fat((int)p.x + ox, (int)p.y + oy, p.c);
+}
 
-  drawHUD();
-  if (mode == M_PLAY) drawControls();
+static void updateLife(float dt) {
+  for (auto &c : clouds) { c.x += dt * 1.2f; if (c.x - c.w > L + 4) { c.x = -c.w - 4; c.y = frand(22, 62); c.w = frand(14, 30); } }
+  for (auto &g : gulls) if (g.on) {
+    g.t += dt; g.x += g.vx * dt; g.y += g.vy * dt + sinf(g.t * 1.3f) * 0.05f;
+    if (g.x < -10 || g.x > L + 10 || g.y < -10) g.on = false;
+  }
+  // tagsueber ab und zu von selbst eine Moewe
+  if (light.day > 0.6f && (rnd() % 1000) < (int)(dt * 1000 / 25)) spawnGull(rnd() & 1 ? -5 : L + 5, frand(20, 60));
+  for (auto &f : fish) if (f.on) { f.t += dt; if (f.t > 0.9f) f.on = false; }
+  for (auto &r : rings) if (r.on) { r.t += dt; if (r.t > 1.6f) r.on = false; }
+  // ab und zu springt von selbst ein Fisch
+  if ((rnd() % 1000) < (int)(dt * 1000 / 40)) spawnFish(frand(80, 150), frand(110, 160));
+  updateBoats(dt);
+}
 
-  if (hintT > 0 && mode == M_PLAY && room == 0) {
-    uint16_t c = hintT < 1 ? mix(C(0xf4efe6), C(0x5b4e6e), 1 - hintT) : C(0xf4efe6);
-    text("LINKS: LAUFEN", 196, 2, c);
-    text("RECHTS: SCHWERT", 222, 2, c);
+// ---------------------------------------------------------------- Zeichnen der Szene
+static uint16_t skyRow[HOR];
+
+static void drawSun() {
+  float sr = SUNRISE[(month + 11) % 12], ss = SUNSET[(month + 11) % 12];
+  float p = (hours - sr) / (ss - sr);
+  if (p < -0.05f || p > 1.05f) return;
+  float x = 44 + p * 116, y = HOR + 6 - sinf(clampf(p, 0, 1) * 3.1416f) * 74;
+  float low = clampf(1 - (HOR - y) / 40.0f, 0, 1);
+  uint16_t core = mixRGB(0xfff6d8, 0xffb050, low), rim = mixRGB(0xffe9a0, 0xff7a3a, low);
+  float r = 7 + low * 2;
+  for (int j = -12; j <= 12; j++) for (int i = -12; i <= 12; i++) {
+    float d = sqrtf(i * i + j * j);
+    int X = (int)x + i, Y = (int)y + j;
+    if ((unsigned)X >= (unsigned)L || (unsigned)Y >= (unsigned)L || mat[Y * L + X] != M_SKY) continue;
+    if (d <= r - 1.5f) lf[Y * L + X] = core;
+    else if (d <= r) lf[Y * L + X] = rim;
+    else if (d <= r + 4) lf[Y * L + X] = mix(lf[Y * L + X], rim, 0.25f * (1 - (d - r) / 4));
   }
-  if (fade > 0) {  // abblenden und wieder aufblenden
-    float k = fade > 0.25f ? (0.5f - fade) / 0.25f : fade / 0.25f;
-    for (int i = 0; i < SCR * SCR; i++) fb[i] = mix(fb[i], 0, fminf(1, k));
+}
+
+static void drawMoonAndStars() {
+  float night = 1 - light.day;
+  if (night < 0.05f) return;
+  for (auto &s : stars) {
+    float tw = 0.6f + 0.4f * sinf(t_ * 1.7f + s.ph);
+    lpSky(s.x, s.y, mix(lf[s.y * L + s.x], C(0xfff8e8), night * tw * ((s.ph & 3) ? 0.7f : 1.0f)));
   }
-  if (mode != M_PLAY) {
-    float k = fminf(0.6f, (t_ - endT) * 1.5f);
-    if (mode == M_DEAD) k = fminf(0.6f, (hero.deadT - 0.8f) * 1.2f);
-    if (k > 0) {
-      for (int i = 0; i < SCR * SCR; i++) fb[i] = mix(fb[i], 0, k);
-      char buf[32]; uint32_t s = (endMs - startMs) / 1000;
-      if (mode == M_WIN) {
-        text("SCHATZ GEFUNDEN!", 170, 3, C(0xffe27a));
-        snprintf(buf, sizeof buf, "ZEIT %u:%02u", (unsigned)(s / 60), (unsigned)(s % 60));
-        text(buf, 230, 3, C(0xf4efe6));
-        text("ENDE DES PROTOTYPS", 280, 2, C(0xb9b0c8));
-        text("TIPPEN = NEU STARTEN", 312, 2, C(0xb9b0c8));
-      } else {
-        text("AUTSCH!", 200, 5, C(0xff8fa0));
-        text("TIPPEN = RAUM NOCHMAL", 300, 2, C(0xb9b0c8));
+  // Mond zieht von links nach rechts durch die Nacht
+  float h = hours < 12 ? hours + 24 : hours;
+  float p = (h - 20.5f) / 10.0f;
+  if (p < 0 || p > 1) return;
+  float x = 50 + p * 130, y = 66 - sinf(p * 3.1416f) * 40;
+  for (int j = -6; j <= 6; j++) for (int i = -6; i <= 6; i++) {
+    float d = sqrtf(i * i + j * j);
+    if (d > 5.5f) continue;
+    uint16_t c = C(0xf2eee0);
+    if ((i == -2 && j == -1) || (i == 1 && j == 2) || (i == 2 && j == -2)) c = C(0xcfcabb);
+    lpSky((int)x + i, (int)y + j, mix(lf[((int)y + j) * L + (int)x + i], c, night));
+  }
+}
+
+static void drawClouds() {
+  uint32_t cw = lerpRGB(0x2a3352, 0xffffff, light.day);
+  cw = lerpRGB(cw, 0xffc4a8, light.golden * 0.8f);
+  uint16_t c = C(cw), cs = mix(c, C(light.skyMid), 0.35f);
+  for (auto &cl : clouds) {
+    for (int j = -6; j <= 4; j++) for (int i = (int)-cl.w; i <= (int)cl.w; i++) {
+      float u = i / cl.w;
+      float top = -3 - 3 * (1 - u * u) - 1.5f * sinf(i * 0.5f + cl.w);
+      if (j < top || j > 3 - fabsf(u) * 2) continue;
+      lpSky((int)cl.x + i, (int)cl.y + j, j >= 1 ? cs : c);
+    }
+  }
+}
+
+static void drawBoat(const Boat &b, int k) {
+  int w, h; boatSize(b.kind, w, h);
+  const char *const *art = boatArt(b.kind);
+  bool flip = b.vx < 0;
+  float bob = sinf(t_ * 2.0f + k * 1.7f) * 0.6f;
+  int x0 = (int)(b.x - w / 2), y0 = (int)(b.y + bob) - h + 2;
+  for (int j = 0; j < h; j++) for (int i = 0; i < w; i++) {
+    char ch = art[j][flip ? w - 1 - i : i];
+    if (ch == '.') continue;
+    int X = x0 + i, Y = y0 + j;
+    if (b.state == 2) lp(X, Y, boatCol(ch));   // am Steg: vor dem Steg
+    else lpBehind(X, Y, boatCol(ch));
+  }
+  // Kielwasser
+  if (b.state != 2 && fabsf(b.vx) > 0.5f)
+    for (int i = 1; i < 6; i++) {
+      int X = (int)b.x - (b.vx > 0 ? 1 : -1) * (w / 2 + i * 2), Y = (int)(b.y + bob) + 2 + (i & 1);
+      if ((((int)(t_ * 4)) + i) % 3) lpBehind(X, Y, C(0xe8f8f8));
+    }
+}
+
+static void drawSeaLife() {
+  for (auto &r : rings) if (r.on) {
+    float rad = 1 + r.t * 6, a = 1 - r.t / 1.6f;
+    for (float q = 0; q < 6.28f; q += 0.25f) {
+      int X = (int)(r.x + cosf(q) * rad), Y = (int)(r.y + sinf(q) * rad * 0.4f);
+      if ((unsigned)X < (unsigned)L && (unsigned)Y < (unsigned)L && mat[Y * L + X] == M_SEA) lf[Y * L + X] = mix(lf[Y * L + X], C(0xffffff), 0.6f * a);
+    }
+  }
+  for (auto &f : fish) if (f.on) {
+    float p = f.t / 0.9f;
+    int X = (int)(f.x - 6 + p * 12), Y = (int)(f.y - sinf(p * 3.1416f) * 9);
+    uint16_t c = C(0xcfd8e0), cd = C(0x7f8a98);
+    lp(X, Y, c); lp(X + 1, Y, c); lp(X - 1, Y + (p < 0.5f ? 1 : -1), cd); lp(X + 2, Y, cd);
+    if (p < 0.2f || p > 0.8f) lp(X, Y + 2, C(0xffffff));
+  }
+}
+
+static void drawGulls() {
+  uint16_t c = light.day > 0.5f ? C(0xffffff) : C(0x2a2a3a);
+  if (light.golden > 0.4f) c = C(0x3a2a30);
+  for (auto &g : gulls) if (g.on) {
+    int x = (int)g.x, y = (int)g.y; bool up = ((int)(g.t * 5)) & 1;
+    lp(x, y, c);
+    if (up) { lp(x - 1, y - 1, c); lp(x - 2, y - 1, c); lp(x + 1, y - 1, c); lp(x + 2, y - 1, c); }
+    else { lp(x - 1, y, c); lp(x - 2, y + 1, c); lp(x + 1, y, c); lp(x + 2, y + 1, c); }
+  }
+}
+
+// Wellen am Strand: Schaumkante laeuft vor und zurueck
+static void drawShore() {
+  for (int x = 0; x < L; x++) {
+    float by = beachY(x);
+    float w = 1.5f + 1.5f * sinf(t_ * 0.9f + x * 0.045f) + 0.6f * sinf(t_ * 2.1f + x * 0.21f);
+    int fy = (int)(by + w - 1.5f);
+    for (int y = (int)by - 2; y <= fy; y++) {
+      if ((unsigned)y >= (unsigned)L) continue;
+      uint8_t m = mat[y * L + x];
+      if (m != M_SEA && m != M_WET && m != M_SAND) continue;
+      uint16_t foam = C(0xf4fbf8);
+      lf[y * L + x] = (y == fy) ? foam : mix(lf[y * L + x], C(0x9fe6dc), 0.55f);
+    }
+  }
+}
+
+// Glitzern auf dem Wasser (Sonne/Mond-Spiegelung + kleine Lichtpunkte)
+static void drawGlitter() {
+  float sr = SUNRISE[(month + 11) % 12], ss = SUNSET[(month + 11) % 12];
+  float p = (hours - sr) / (ss - sr);
+  int tick4 = (int)(t_ * 5);
+  if (p > -0.02f && p < 1.02f) {
+    float sx = 44 + p * 116;
+    float low = clampf(1 - sinf(clampf(p, 0, 1) * 3.1416f), 0, 1);
+    uint16_t gc = mixRGB(0xfff6d8, 0xffa040, low);
+    for (int y = HOR + 1; y < 180; y++) {
+      float spread = 3 + (y - HOR) * (0.12f + low * 0.18f);
+      for (int i = (int)-spread; i <= (int)spread; i++) {
+        int X = (int)sx + i;
+        if ((unsigned)X >= (unsigned)L || mat[y * L + X] != M_SEA) continue;
+        uint32_t hh = hash2(X, y, tick4);
+        if ((hh & 7) == 0 || (fabsf((float)i) < spread * 0.3f && (hh & 3) == 0)) lf[y * L + X] = mix(lf[y * L + X], gc, 0.75f);
       }
     }
-  } else if (msgT > 0 && fade <= 0) {
-    text(msg, 160, 2, C(0xf4efe6));
   }
+  // Mondspiegelung
+  float night = 1 - light.day;
+  float h = hours < 12 ? hours + 24 : hours, mp = (h - 20.5f) / 10.0f;
+  if (night > 0.3f && mp >= 0 && mp <= 1) {
+    float mx = 50 + mp * 130;
+    for (int y = HOR + 1; y < 180; y++) for (int i = -3; i <= 3; i++) {
+      int X = (int)mx + i;
+      if ((unsigned)X >= (unsigned)L || mat[y * L + X] != M_SEA) continue;
+      if ((hash2(X, y, tick4) & 7) == 0) lf[y * L + X] = mix(lf[y * L + X], C(0xdfe6f0), 0.6f * night);
+    }
+  }
+  // feines Funkeln ueberall im Wasser (tagsueber)
+  if (light.day > 0.3f)
+    for (int k = 0; k < 40; k++) {
+      int X = hash2(k, tick4, 5) % L, Y = HOR + 2 + hash2(tick4, k, 6) % 85;
+      if (Y >= L) continue;
+      if (mat[Y * L + X] == M_SEA) lf[Y * L + X] = mix(lf[Y * L + X], C(0xffffff), 0.5f * light.day);
+    }
+}
+
+// Lichter bei Nacht (werden nicht abgedunkelt)
+static bool lightsOn() {
+  float h = hours;
+  return (1 - light.day) > 0.35f && !(h > 1.5f && h < 6.0f);
+}
+static void drawNightLights() {
+  float night = 1 - light.day;
+  if (night < 0.25f) return;
+  float k = clampf((night - 0.25f) / 0.4f, 0, 1);
+  bool on = lightsOn();
+  // Fenster der Finca
+  if (fincaLight && on)
+    for (int i = 0; i < L * 80; i++) if (mat[i] == M_WINDOW) {
+      int x = i % L, y = i / L;
+      uint16_t w = (hash2(x / 2, y / 4, (int)(t_ * 0.2f)) & 15) == 0 ? C(0xffc860) : C(0xffd77a);
+      lf[i] = mix(lf[i], w, k);
+    }
+  // Lichterkette am Steg
+  if (on)
+    for (int y = 154; y < 182; y += 4) {
+      static const uint32_t cols[] = {0xffd060, 0xff8a6a, 0x9ad8ff, 0xffe8b0};
+      int idx = (y / 4) & 3;
+      float blink = 0.75f + 0.25f * sinf(t_ * 2 + y);
+      lp(135, y, mix(lf[y * L + 135], C(cols[idx]), k * blink));
+      lp(146, y + 2, mix(lf[(y + 2) * L + 146], C(cols[(idx + 2) & 3]), k * blink));
+    }
+  // Topplichter der Boote
+  for (int b = 0; b < 3; b++) {
+    int w, h; boatSize(boats[b].kind, w, h);
+    int X = (int)boats[b].x, Y = (int)boats[b].y - h + 2;
+    if ((unsigned)X < (unsigned)L && (unsigned)Y < (unsigned)L && (mat[Y * L + X] == M_SKY || mat[Y * L + X] == M_SEA || boats[b].state == 2))
+      lf[Y * L + X] = mix(lf[Y * L + X], C(0xfff2c0), k);
+  }
+  // Gluehwuermchen im Gebuesch
+  for (auto &f : flies) {
+    float b = 0.5f + 0.5f * sinf(t_ * 1.3f + f.ph * 3);
+    if (b < 0.4f) continue;
+    float x = f.x + sinf(t_ * 0.4f + f.ph) * 5, y = f.y + cosf(t_ * 0.33f + f.ph * 2) * 3;
+    lp((int)x, (int)y, mix(lf[(int)y * L + (int)x], C(0xd8ff7a), k * b));
+  }
+}
+
+// ---------------------------------------------------------------- Uhr stellen
+static bool clockUi = false;
+static int setH = 12, setM = 0;
+static uint32_t clockUiIdleMs = 0;
+static bool clockChanged = false;
+
+static void textC(const char *s, int cy, int sc, uint16_t c) {   // zentriert mit Rand
+  int w = textWidth(s, sc), x = (SCR - w) / 2, y = cy - 7 * sc / 2;
+  for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++)
+    if (dx || dy) textRaw(s, x + dx * 2, y + dy * 2, sc, K_OUT);
+  textRaw(s, x, y, sc, c);
+}
+static void arrow(int cx, int cy, bool upw, uint16_t c) {
+  for (int j = 0; j < 14; j++) { int w = upw ? j : 13 - j; rect(cx - w * 2, cy - 14 + j * 2, w * 4 + 2, 2, c); }
+}
+static void drawClockUi() {
+  for (int i = 0; i < SCR * SCR; i++) fb[i] = mix(fb[i], 0, 0.62f);
+  char buf[8]; snprintf(buf, sizeof buf, "%02d:%02d", setH, setM);
+  textC("UHR STELLEN", 128, 3, C(0xffd77a));
+  textC(buf, 233, 9, C(0xfff8ee));
+  uint16_t a = C(0xb9d8e8);
+  arrow(158, 168, true, a); arrow(158, 312, false, a);
+  arrow(308, 168, true, a); arrow(308, 312, false, a);
+  rect(193, 362, 80, 40, C(0x2fa39a));
+  textC("OK", 383, 3, C(0x0b1a18));
+}
+// Tipp im Uhr-Menue
+static void clockTap(int x, int y) {
+  clockUiIdleMs = 0;
+  if (y > 350 && x > 180 && x < 286) {
+    clockUi = false; clockChanged = true;
+    hours = setH + setM / 60.0f; clockSetHours = hours; clockSetMs = 0;   // sofort uebernehmen
+    return;
+  }
+  bool left = x < 233, upper = y < 233;
+  if (y < 120) return;
+  if (left) setH = (setH + (upper ? 1 : 23)) % 24;
+  else setM = (setM + (upper ? 5 : 55)) % 60;
+}
+
+// ---------------------------------------------------------------- Eingabe
+static bool wasDown = false;
+static uint32_t downMs = 0;
+static int downX = 0, downY = 0;
+static bool longFired = false;
+static uint32_t lastMs = 0;
+
+static void handleTap(int sx, int sy) {
+  int x = sx / 2, y = sy / 2;
+  if ((unsigned)x >= (unsigned)L || (unsigned)y >= (unsigned)L) return;
+  // Boot getroffen?
+  for (int k = 0; k < 3; k++) {
+    Boat &b = boats[k]; int w, h; boatSize(b.kind, w, h);
+    if (fabsf(x - b.x) < w / 2 + 6 && y > b.y - h - 4 && y < b.y + 6) {
+      if (b.state == 0 && b.kind != 1) {
+        bool free = true; for (auto &o : boats) if (&o != &b && (o.state == 1 || o.state == 2)) free = false;
+        if (free) { b.state = 1; return; }
+      }
+      if (b.state == 2) { b.state = 3; b.t = 0; b.vx = 4.0f; return; }
+      spawnFish(b.x + 8, b.y + 3);
+      return;
+    }
+  }
+  uint8_t m = mat[y * L + x];
+  if (x > 18 && x < 60 && y > 42 && y < 76) { fincaLight = !fincaLight; return; }
+  if (m == M_SEA || m == M_WET) { spawnFish(x, y); return; }
+  if (m == M_SKY) { spawnGull(x, y); return; }
+}
+
+static void input(uint32_t now, const Touch *pts, int n) {
+  bool down = n > 0;
+  int x = down ? pts[0].x : downX, y = down ? pts[0].y : downY;
+  if (down && !wasDown) { downMs = now; downX = x; downY = y; longFired = false; }
+  if (down && !longFired && !clockUi && now - downMs > 1500) {
+    int dx = x - downX, dy = y - downY;
+    if (dx * dx + dy * dy < 30 * 30) {
+      longFired = true; clockUi = true; clockUiIdleMs = 0;
+      setH = (int)hours % 24; setM = ((int)(hours * 60) % 60) / 5 * 5;
+    }
+  }
+  if (!down && wasDown && !longFired) {
+    if (clockUi) clockTap(downX, downY);
+    else if (now - downMs < 600) handleTap(downX, downY);
+  }
+  wasDown = down;
 }
 
 // ---------------------------------------------------------------- Takt
+static int shiftX = 0, shiftY = 0;     // gegen Einbrennen: Bild wandert langsam um ein paar Pixel
+static float shiftT = 0;
+static uint8_t bright = 180;
+
+void begin(uint16_t *fbuf, uint16_t *work, uint32_t seed) {
+  fb = fbuf; rng = seed ? seed : 1;
+  uint8_t *w = (uint8_t *)work;
+  base = (uint16_t *)w; w += L * L * 2;
+  lf = (uint16_t *)w; w += L * L * 2;
+  mat = w;
+  buildScene();
+  initWorld();
+  lastMs = 0;
+}
+
+void setClock(int h, int m, int s, int mon) {
+  if (testHours >= 0) return;
+  clockSetHours = h + m / 60.0f + s / 3600.0f; clockSetMs = lastMs;
+  if (mon >= 1 && mon <= 12) month = mon;
+}
+void testSetHours(float h, int mon) { testHours = h; if (h >= 0) hours = h; if (mon >= 1 && mon <= 12) month = mon; }
+bool takeClockChange(int &h, int &m) { if (!clockChanged) return false; clockChanged = false; h = setH; m = setM; return true; }
+uint8_t wantBrightness() { return bright; }
+
 void tick(uint32_t now, const Touch *pts, int n) {
-  if (!lastMs) { lastMs = now; startMs = now; }
+  if (!lastMs) { lastMs = now; clockSetMs = now; }
   float dt = (now - lastMs) / 1000.0f; lastMs = now;
-  if (dt > 0.05f) dt = 0.05f;
-  bool any = n > 0;
+  if (dt > 0.1f) dt = 0.1f;
   t_ += dt;
-  if (mode != M_PLAY) {
-    // nach Ende: ein Tipp (irgendwo) startet neu, erst nach kurzer Pause
-    float waited = mode == M_DEAD ? hero.deadT - 1.2f : t_ - endT - 0.8f;
-    if (!any && anyWas && waited > 0) {
-      if (mode == M_WIN) newGame(now); else retryRoom();
-    }
-    anyWas = any;
-    if (mode == M_DEAD) hero.deadT += dt;
-    updateMisc(dt);
-    render();
-    return;
+  if (testHours >= 0) hours = testHours;
+  else { hours = clockSetHours + (now - clockSetMs) / 3600000.0f; while (hours >= 24) hours -= 24; }
+
+  input(now, pts, n);
+  if (clockUi) { clockUiIdleMs += (uint32_t)(dt * 1000); if (clockUiIdleMs > 20000) clockUi = false; }
+
+  computeLight();
+  updateLife(dt);
+
+  // Himmel-Verlauf je Zeile
+  for (int y = 0; y < HOR; y++) {
+    float v = (float)y / HOR;
+    uint32_t c = v < 0.55f ? lerpRGB(light.skyTop, light.skyMid, v / 0.55f) : lerpRGB(light.skyMid, light.skyHor, (v - 0.55f) / 0.45f);
+    skyRow[y] = C(c);
   }
-  anyWas = any;
-  readInput(pts, n);
-  if (fade > 0) { updateFade(dt); updateMisc(dt); render(); return; }
-  if (freeze > 0) { freeze -= dt; if (shake > 0) shake -= dt; render(); return; }
-  updateHero(dt);
-  updateAttackHit();
-  updateSlimes(dt);
-  updateBlocksAndDoors(dt);
-  updateMisc(dt);
-  if (chestT >= 0) {
-    chestT += dt;
-    if (chestT > 1.2f) { mode = M_WIN; endMs = now; endT = t_; chestT = -1; }
+  // 1) feste Szene + Himmel
+  for (int y = 0; y < L; y++) {
+    const uint16_t *b = base + y * L; const uint8_t *m = mat + y * L; uint16_t *o = lf + y * L;
+    for (int x = 0; x < L; x++) o[x] = m[x] == M_SKY ? skyRow[y] : b[x];
   }
-  if (mode == M_PLAY && fade <= 0) checkExits();
-  render();
+  // 2) Himmel-Objekte (hinter den Felsen)
+  drawMoonAndStars();
+  drawSun();
+  drawClouds();
+  // 3) Wasser-Leben
+  drawShore();
+  for (int k = 0; k < 3; k++) if (boats[k].state != 2) drawBoat(boats[k], k);
+  drawSeaLife();
+  for (int k = 0; k < 3; k++) if (boats[k].state == 2) drawBoat(boats[k], k);
+  // 4) Licht der Tageszeit auf alles ausser Himmel
+  for (int i = 0; i < L * L; i++) if (mat[i] != M_SKY) lf[i] = lit(lf[i]);
+  // 5) Dinge, die selbst leuchten oder hell glitzern
+  drawGlitter();
+  drawGulls();
+  drawNightLights();
+
+  // gegen Einbrennen: alle 2 Minuten ein Pixel weiter auf einer kleinen Runde
+  shiftT += dt;
+  if (shiftT > 120) {
+    shiftT = 0;
+    static const int8_t path[8][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}, {0, -1}};
+    static int p = 0; p = (p + 1) & 7; shiftX = path[p][0]; shiftY = path[p][1];
+  }
+  // 6) doppelt skaliert ins Bild
+  static int16_t xmap[SCR]; static int mapFor = 99;
+  if (mapFor != shiftX) {
+    mapFor = shiftX;
+    for (int x = 0; x < SCR; x++) { int lx = (x - shiftX) >> 1; xmap[x] = lx < 0 ? 0 : (lx >= L ? L - 1 : lx); }
+  }
+  int prevLy = -1;
+  for (int y = 0; y < SCR; y++) {
+    int ly = (y - shiftY) >> 1; if (ly < 0) ly = 0; if (ly >= L) ly = L - 1;
+    uint16_t *d = fb + y * SCR;
+    if (ly == prevLy) { memcpy(d, d - SCR, SCR * 2); continue; }   // zweite Zeile = Kopie
+    prevLy = ly;
+    const uint16_t *src = lf + ly * L;
+    for (int x = 0; x < SCR; x++) d[x] = src[xmap[x]];
+  }
+  if (clockUi) drawClockUi();
+  else if (t_ < 8) {
+    float k = t_ < 6 ? 1 : (8 - t_) / 2;
+    textC("LANGE DRÜCKEN = UHR STELLEN", 300, 2, mix(C(0x404040), C(0xfff8ee), k));
+  }
+  // Helligkeit: tags hell, nachts sanft
+  bright = (uint8_t)(70 + 120 * light.day);
 }
 
 Debug debug() {
-  Debug d;
-  memset(&d, 0, sizeof d);
-  d.hx = hero.x; d.hy = hero.y; d.hp = hero.hp; d.mode = mode; d.room = room; d.fading = fade > 0;
-  d.doorOpen = doorN >= 1;
-  d.nSlimes = 0;
-  for (int k = 0; k < cur->nSlimes; k++) if (cur->slimes[k].state < 3) {
-    d.sx[d.nSlimes] = cur->slimes[k].x; d.sy[d.nSlimes] = cur->slimes[k].y; d.nSlimes++;
-  }
-  d.nBlocks = cur->nBlocks;
-  for (int k = 0; k < cur->nBlocks; k++) {
-    d.bi[k] = cur->blocks[k].i; d.bj[k] = cur->blocks[k].j;
-    if (cur->blocks[k].moving || cur->blocks[k].sinkT > 0) d.blockMoving = true;
-  }
-  d.chestOpen = cur->chestOpen;
+  Debug d; memset(&d, 0, sizeof d);
+  d.hours = hours; d.daylight = light.day; d.clockUi = clockUi; d.lightsOn = lightsOn() && fincaLight;
+  for (int k = 0; k < 3; k++) { d.boatState[k] = boats[k].state; d.boatX[k] = boats[k].x; d.boatY[k] = boats[k].y; if (boats[k].state == 2) d.boatsDocked++; }
   return d;
 }
-
-// Fuer Tests: Bildschirmmitte der Steuerzonen
-void controlCenters(float &padX, float &padY, float &btnX, float &btnY) { padX = PAD_X; padY = PAD_Y; btnX = BTN_X; btnY = BTN_Y; }
 
 }  // namespace kw

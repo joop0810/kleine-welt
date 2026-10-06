@@ -1,4 +1,4 @@
-// Kleine Welt - Prototyp
+// Kleine Welt - "Cala": kleine Mittelmeerbucht als Wohlfuehl-Deko fuer die Wand
 // Board: Waveshare ESP32-S3-Touch-AMOLED-1.75 (466x466 AMOLED, CO5300 QSPI, Touch CST9217)
 //
 // Bibliotheken (gleiche Versionen wie TamaPoke):
@@ -10,38 +10,43 @@
 // nicht ein. TamaPokes Spielstand (NVS) und Ruhmeshalle (FFat) bleiben unberuehrt,
 // solange beim Flashen "Erase device" nicht angehakt ist. Die Partitionstabelle ist
 // dieselbe wie bei TamaPoke (app3M_fat9M_16MB) - bitte nicht aendern.
+//
+// Uhrzeit: kommt aus der RTC (PCF85063), die wie bei TamaPoke die Ortszeit haelt.
+// Nur wenn man am Geraet die Uhr stellt, werden Stunde und Minute in die RTC
+// geschrieben (Datum bleibt) - genau wie TamaPokes eigenes Uhr-Menue es tut.
 
 #include <Arduino.h>
 #include <Wire.h>
 #include "pin_config.h"          // definiert XPOWERS_CHIP_AXP2101, muss vor XPowersLib stehen
 #include "Arduino_GFX_Library.h"
 #include "TouchDrvCSTXXX.hpp"
+#include <SensorPCF85063.hpp>
 #include <XPowersLib.h>
 #include "game.h"
 
-#define FW_VERSION "0.2.0"
+#define FW_VERSION "0.3.0"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
 Arduino_CO5300 *panel = new Arduino_CO5300(bus, LCD_RESET, 0, LCD_WIDTH, LCD_HEIGHT, 6, 0, 0, 0);
 TouchDrvCST92xx touch;
 XPowersPMU pmu;
+SensorPCF85063 rtc;
+static bool rtcOk = false;
 
-static uint16_t *fb = nullptr, *bg = nullptr;
+static uint16_t *fb = nullptr, *work = nullptr;
 
 // Touch: der CST9217 meldet per INT, wenn Daten da sind. Nur dann (oder solange
-// der Finger liegt) wird I2C gelesen - ein schlafender Chip blockiert sonst ~1 s.
+// ein Finger liegt) wird I2C gelesen - ein schlafender Chip blockiert sonst ~1 s.
 static volatile bool touchIrq = false;
 static void IRAM_ATTR touchIsr() { touchIrq = true; }
-// Bis zu zwei Finger (Steuerkreuz + Schwert gleichzeitig)
 static kw::Touch fingers[2];
 static int nFingers = 0;
-static bool fingerDown = false;
 
 static void readTouch() {
   static uint32_t lastPoll = 0;
   if (millis() - lastPoll < 15) return;
   lastPoll = millis();
-  if (!touchIrq && !fingerDown) return;
+  if (!touchIrq && nFingers == 0) return;
   touchIrq = false;
   int16_t xs[2], ys[2];
   int n = touch.getPoint(xs, ys, 2);
@@ -49,28 +54,20 @@ static void readTouch() {
   if (n < 0) n = 0;
   for (int i = 0; i < n; i++) { fingers[i].x = xs[i]; fingers[i].y = ys[i]; }
   nFingers = n;
-  fingerDown = n > 0;
 }
 
-// AMOLED schonen: nach 60 s ohne Beruehrung dunkler, nach 3 min aus.
-static const uint8_t BRIGHT = 190;
-static uint32_t lastTouchMs = 0;
-static uint8_t dimStage = 0;     // 0 an, 1 gedimmt, 2 aus
-static bool swallow = false;     // Beruehrung zum Aufwecken nicht ans Spiel weitergeben
-
-static void handleDimming() {
-  uint32_t idle = millis() - lastTouchMs;
-  uint8_t want = idle > 180000 ? 2 : (idle > 60000 ? 1 : 0);
-  if (want != dimStage) {
-    dimStage = want;
-    panel->setBrightness(dimStage == 0 ? BRIGHT : (dimStage == 1 ? 40 : 0));
-  }
+// Uhr aus der RTC an den Spielkern geben (alle 10 s; dazwischen zaehlt der Kern selbst)
+static void syncClock() {
+  if (!rtcOk) return;
+  RTC_DateTime t = rtc.getDateTime();
+  if (t.getYear() < 2025 || t.getYear() > 2120) return;   // keine gueltige Zeit
+  kw::setClock(t.getHour(), t.getMinute(), t.getSecond(), t.getMonth());
 }
 
 void setup() {
   Serial.begin(115200);
   Serial.setTxTimeoutMs(0);   // ohne offenen Monitor nicht blockieren
-  Serial.printf("Kleine Welt fw v%s\n", FW_VERSION);
+  Serial.printf("Kleine Welt (Cala) fw v%s\n", FW_VERSION);
 
   Wire.begin(IIC_SDA, IIC_SCL);
   Wire.setTimeOut(50);
@@ -82,15 +79,16 @@ void setup() {
   } else {
     Serial.println("AXP2101 nicht gefunden");
   }
+  rtcOk = rtc.begin(Wire, IIC_SDA, IIC_SCL);
+  if (!rtcOk) Serial.println("RTC PCF85063 nicht gefunden - Uhr laeuft ab 12:00");
 
   fb = (uint16_t *)ps_malloc(LCD_WIDTH * LCD_HEIGHT * 2);
-  bg = (uint16_t *)ps_malloc(LCD_WIDTH * LCD_HEIGHT * 2);
-  if (!fb || !bg) { Serial.println("PSRAM fehlt - PSRAM=opi eingestellt?"); while (true) delay(1000); }
+  work = (uint16_t *)ps_malloc(LCD_WIDTH * LCD_HEIGHT * 2);
+  if (!fb || !work) { Serial.println("PSRAM fehlt - PSRAM=opi eingestellt?"); while (true) delay(1000); }
 
-  // QSPI mit 80 MHz: das Uebertragen des ganzen Bildes ist der Engpass
   if (!panel->begin(80000000)) Serial.println("Display-Start fehlgeschlagen");
   panel->fillScreen(0x0000);
-  panel->setBrightness(BRIGHT);
+  panel->setBrightness(150);
 
   touch.setPins(TP_RESET, TP_INT);
   bool ok = false;
@@ -103,35 +101,47 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(TP_INT), touchIsr, FALLING);
 
   uint32_t t0 = millis();
-  kw::begin(fb, bg, esp_random());
-  Serial.printf("Raum vorgerendert in %lu ms\n", (unsigned long)(millis() - t0));
-  lastTouchMs = millis();
+  kw::begin(fb, work, esp_random());
+  Serial.printf("Bucht vorgerendert in %lu ms\n", (unsigned long)(millis() - t0));
+  syncClock();
 }
 
 void loop() {
-  // ~40 Bilder/s Obergrenze; das Uebertragen braucht ohnehin den Grossteil der Zeit
-  static uint32_t lastFrame = 0, fpsT = 0, frames = 0;
+  // ~25 Bilder/s reichen fuer ruhige Deko und lassen das Panel kuehler
+  static uint32_t lastFrame = 0, lastClock = 0, fpsT = 0, frames = 0;
+  static uint8_t brightNow = 0;
   readTouch();
-  if (fingerDown) {
-    if (dimStage > 0) swallow = true;   // erste Beruehrung weckt nur auf
-    lastTouchMs = millis();
-  }
-  if (!fingerDown) swallow = false;
-  handleDimming();
-  if (dimStage == 2) { delay(30); return; }   // Bildschirm aus: Spiel pausiert
-
   uint32_t now = millis();
-  if (now - lastFrame < 25) { delay(1); return; }
+  if (now - lastClock > 10000) { lastClock = now; syncClock(); }
+  if (now - lastFrame < 40) { delay(1); return; }
   lastFrame = now;
 
-  kw::tick(now, fingers, swallow ? 0 : nFingers);
+  kw::tick(now, fingers, nFingers);
   panel->draw16bitRGBBitmap(0, 0, fb, LCD_WIDTH, LCD_HEIGHT);
 
+  // Helligkeit folgt der Tageszeit (sanft, damit es nicht springt)
+  uint8_t want = kw::wantBrightness();
+  if (want != brightNow) {
+    brightNow += want > brightNow ? 1 : -1;
+    panel->setBrightness(brightNow);
+  }
+
+  // Uhr am Geraet gestellt? -> Stunde/Minute in die RTC, Datum bleibt
+  int h, m;
+  if (kw::takeClockChange(h, m) && rtcOk) {
+    RTC_DateTime t = rtc.getDateTime();
+    uint16_t y = t.getYear(); uint8_t mo = t.getMonth(), d = t.getDay();
+    if (y < 2025 || y > 2120) { y = 2026; mo = 1; d = 1; }
+    rtc.setDateTime(RTC_DateTime(y, mo, d, h, m, 0));
+    Serial.printf("Uhr gestellt: %02d:%02d\n", h, m);
+    syncClock();
+  }
+
   frames++;
-  if (now - fpsT > 5000) {
+  if (now - fpsT > 10000) {
     kw::Debug d = kw::debug();
-    Serial.printf("fps %.1f  raum %d  held %.0f,%.0f  hp %d  finger %d  tuer %d  modus %d\n",
-                  frames * 1000.0f / (now - fpsT), d.room, d.hx, d.hy, d.hp, nFingers, d.doorOpen, d.mode);
+    Serial.printf("fps %.1f  zeit %.2f h  tag %.2f  boote am steg %d  hell %u\n",
+                  frames * 1000.0f / (now - fpsT), d.hours, d.daylight, d.boatsDocked, brightNow);
     fpsT = now; frames = 0;
   }
 }

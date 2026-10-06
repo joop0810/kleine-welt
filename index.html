@@ -43,11 +43,11 @@
 <body>
 <main>
   <header>
-    <div class="orb"><img src="docs/vorschau.png" alt="Spielszene: runder Raum, Held schiebt einen Steinblock"></div>
+    <div class="orb"><img src="docs/vorschau.png" alt="Bucht bei Sonnenuntergang mit Finca, Steg und Sonnenschirmen"></div>
     <div>
-      <div class="tag">Prototyp 0.2</div>
+      <div class="tag">Wohlfühl-Deko 0.3</div>
       <h1>Kleine Welt</h1>
-      <p class="lead">Vier runde Räume, Schleimlinge, Block-Rätsel und eine Schatztruhe. Für das Waveshare ESP32-S3-Touch-AMOLED-1.75.</p>
+      <p class="lead">Eine kleine Mittelmeerbucht für die Wand – mit echtem Tageslauf, Booten, Möwen und Sonnenuntergang. Für das Waveshare ESP32-S3-Touch-AMOLED-1.75.</p>
     </div>
   </header>
 
@@ -76,14 +76,16 @@
   </section>
 
   <section>
-    <h2>Steuerung</h2>
+    <h2>Antippen (alles freiwillig)</h2>
     <table>
-      <tr><td>Steuerkreuz links unten</td><td>Daumen aufsetzen und schieben – je weiter, desto schneller</td></tr>
-      <tr><td>Schwert rechts unten</td><td>Hieb in Blickrichtung (zielt leicht auf nahe Gegner), vor der Truhe: öffnen</td></tr>
-      <tr><td>Beides gleichzeitig</td><td>Laufen und schlagen mit zwei Daumen</td></tr>
-      <tr><td>Gegen Block laufen</td><td>Block rutscht eine Kachel weiter</td></tr>
+      <tr><td>Boot</td><td>fährt zum Steg und legt eine Weile an (nochmal tippen: legt ab)</td></tr>
+      <tr><td>Meer</td><td>ein Fisch springt</td></tr>
+      <tr><td>Himmel</td><td>eine Möwe fliegt los</td></tr>
+      <tr><td>Finca</td><td>Licht an/aus (abends)</td></tr>
+      <tr><td>Lange drücken</td><td>Uhr stellen (Pfeile, dann OK)</td></tr>
     </table>
-    <p class="note">Räume: Eingang (alle Gegner besiegen) → Der Block → Zwei Platten → Schatzkammer. Durch die untere Tür geht es zurück; gelöste Räume bleiben offen. Sitzt der Block fest, versinkt er und taucht am Start wieder auf. Nach 1 Minute ohne Berührung wird das Display dunkler, nach 3 Minuten geht es aus – Antippen weckt es.</p>
+    <p class="note">Die Bucht folgt der echten Uhrzeit: Sonnenauf- und -untergang je nach Monat, abends Licht in der Finca, Lichterkette am Steg und Glühwürmchen, nachts Mond und Sterne. Das Display bleibt an und wird nachts gedimmt; gegen Einbrennen wandert das Bild alle zwei Minuten um ein Pixel.</p>
+    <p class="note">Die Uhrzeit kommt aus der eingebauten Uhr des Boards – dieselbe, die TamaPoke benutzt. Stellst du sie hier, gilt sie auch für TamaPoke.</p>
   </section>
 
   <footer>

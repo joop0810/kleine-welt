@@ -1,11 +1,11 @@
 # Kleine Welt
 
-Prototyp eines eigenen Action-Adventures für das **Waveshare ESP32-S3-Touch-AMOLED-1.75**
-(466×466 rundes AMOLED). Das runde Display ist das Fenster in die Welt.
+Wohlfühl-Deko für das **Waveshare ESP32-S3-Touch-AMOLED-1.75** (466×466 rundes AMOLED):
+eine kleine Mittelmeerbucht („Cala“) mit Finca, Steg, Booten und echtem Tageslauf nach
+der eingebauten Uhr. Antippen ist freiwillig (Boot anlegen lassen, Fisch, Möwe, Licht),
+lange drücken stellt die Uhr.
 
-**Stand 0.2:** vier verbundene Räume (Eingang → Der Block → Zwei Platten → Schatzkammer),
-Schleimlinge, Block-auf-Platte-Rätsel, Truhe als Ziel. Steuerung: Steuerkreuz links unten,
-Schwert-Knopf rechts unten (zwei Finger gleichzeitig möglich).
+Der frühere Zelda-artige Prototyp liegt im Branch `zelda-prototyp`.
 
 ## Installieren
 
@@ -20,9 +20,9 @@ bricht ab, falls sich die Partitionstabelle je ändern sollte.
 
 | Pfad | Inhalt |
 |---|---|
-| `firmware-src/KleineWelt/game.cpp` | Spielkern (ohne Arduino-Abhängigkeit), Pixelkunst, Raum, Gegner, Rätsel |
-| `firmware-src/KleineWelt/KleineWelt.ino` | Board: Display (CO5300/QSPI), Touch (CST9217), AXP2101, Dimmen |
-| `host/sim.cpp` | PC-Test: spielt den Raum per simuliertem Touch durch, speichert Bilder |
+| `firmware-src/KleineWelt/game.cpp` | Szene (ohne Arduino-Abhängigkeit): Landschaft, Licht je Tageszeit, Boote, Tiere |
+| `firmware-src/KleineWelt/KleineWelt.ino` | Board: Display (CO5300/QSPI), Touch (CST9217), RTC (PCF85063), AXP2101, Helligkeit |
+| `host/sim.cpp` | PC-Test: rendert die Bucht zu mehreren Tageszeiten, prüft die Tipp-Aktionen |
 | `tools/make_manifest.py` | erzeugt `manifest.json`, prüft Partitionstabelle |
 | `.github/workflows/firmware.yml` | Cloud-Build bei jeder Änderung am Quellcode |
 
