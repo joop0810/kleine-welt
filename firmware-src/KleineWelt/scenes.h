@@ -293,43 +293,69 @@ static void buildDorf() {
 }
 
 // ================================================================ 6 Steilkueste mit Kuestenstrasse
-static float c6cliff(int y) { return 150 - (y - 20) * 0.62f + 8 * sinf(y * 0.06f) + 2 * sinf(y * 0.4f); }
-static float c6road(float x) { return 128 + 20 * sinf(x * 0.045f) - x * 0.05f; }
+// Ein Kuestengebirge: Bergkamm gegen den Himmel, faellt nach rechts zum Meer ab und
+// endet unten in einer senkrechten Klippe. Am Hang schlaengelt sich eine Strasse.
+static float c6ridge(float x) {
+  float r = x < 62 ? 40 + (62 - x) * 0.28f : 40 + (x - 62) * 0.52f;
+  return r + 4 * sinf(x * 0.13f) + 2 * sinf(x * 0.41f + 1);
+}
+static float c6coast(float y) { return 164 - (y - 96) * 0.56f + 4 * sinf(y * 0.1f) + 1.5f * sinf(y * 0.5f); }
+static bool c6land(int x, int y) { return y >= c6ridge(x) && (y < 96 ? x < 172 : x < c6coast(y)); }
+static float c6road(float x) { return c6ridge(x) + 30 + 7 * sinf(x * 0.09f); }
+static float roadEnd = 120;
 static void buildKueste() {
   for (int y = 0; y < L; y++) for (int x = 0; x < L; x++) {
     if (y < HOR) bp(x, y, 0, M_SKY); else bp(x, y, seaCol(x, y, 260), M_SEA);
   }
-  // fernes Kap
-  for (int x = 150; x < L; x++) { int top = (int)(HOR - 14 + (x - 150) * -0.08f + 4 * sinf(x * 0.09f)); for (int y = top; y <= HOR; y++) if (matAt(x, y) == M_SKY) bp(x, y, C(0x8a9ab0), M_ROCK); }
-  // grosse Felswand links, die steil ins Meer faellt
-  for (int y = 10; y < L; y++) {
-    float cx = c6cliff(y);
-    for (int x = 0; x < L && x < cx; x++) {
-      float edge = cx - x;
-      uint16_t c = limestone(x, y, edge, 29); Mat m = M_ROCK;
-      if (vnoise(x / 6.0f, y / 5.0f, 81) > 0.66f && edge > 5) { c = scrubCol(x, y); m = M_SCRUB; }
-      if (y > 200) c = mix(c, C(0x6a5a48), 0.25f);
-      bp(x, y, c, m);
+  // fernes Kap am Horizont rechts
+  for (int x = 176; x < L; x++) { int top = (int)(HOR - 10 + 3 * sinf(x * 0.09f) + (x - 176) * 0.05f); for (int y = top; y <= HOR; y++) if (matAt(x, y) == M_SKY) bp(x, y, C(0x8a9ab0), M_ROCK); }
+  // das Gebirge
+  for (int y = 0; y < L; y++) for (int x = 0; x < L; x++) {
+    if (!c6land(x, y)) continue;
+    float top = c6ridge(x), cliff = y >= HOR ? c6coast(y) - x : 99;
+    uint16_t c = limestone(x, y, -1, 29); Mat m = M_ROCK;
+    float slope = y - top;
+    // Macchia: oben am Kamm dicht, am Hang in Flecken
+    float cover = slope < 6 ? 0.9f : 0.55f;
+    if (vnoise(x / 6.0f, y / 5.0f, 81) > 1 - cover * 0.7f && cliff > 9) { c = scrubCol(x, y); m = M_SCRUB; }
+    // rechte Bergflanke im Schatten, Kammlinie im Licht
+    if (x > 62 && slope > 3) c = mix(c, C(0x5a4a3c), 0.10f);
+    if (slope < 1.5f) c = C(0xe2caa2);
+    // Steilwand zum Meer: senkrechte Rinnen, unten dunkel und nass
+    if (cliff < 10) {
+      c = limestone(x, y, cliff < 2 ? 1 : -1, 31);
+      if ((hash2(x / 2, 0, 33) & 3) == 0) c = mix(c, 0, 0.18f);
+      if (cliff >= 2) c = mix(c, C(0x5a4a3c), 0.18f);
+      m = M_ROCK;
     }
+    if (y >= HOR && y - HOR < 200 && c6coast(y) - x < 3 && (hash2(x, y, 34) & 1)) c = C(0x6a5a48);
+    bp(x, y, c, m);
   }
-  // Serpentinenstrasse mit Mauerchen
-  for (int x = 0; x < 120; x++) {
-    int y = (int)c6road(x);
-    if (x >= c6cliff(y) - 3) continue;
+  // Serpentinenstrasse mit Mauerchen am Hang
+  roadEnd = 0;
+  for (int x = 0; x < L; x++) {
+    float yf = c6road(x); int y = (int)yf;
+    bool ok = c6land(x, y) && c6land(x, y + 4) && (y < HOR || x < c6coast(y) - 8);
+    if (!ok) { if (x > 40) break; else continue; }
     for (int j = 0; j < 3; j++) bp(x, y + j, C(0x9a9490));
     bp(x, y + 3, C(0xe8e2d6));
+    roadEnd = x;
   }
-  pine(20, 60, 1.0f); pine(48, 84, 0.9f); pine(10, 150, 1.1f); pine(70, 104, 0.8f);
-  // Aussichtsturm (Talaia)
-  fillRect(30, 40, 38, 62, C(0xc8b088)); fillRect(29, 38, 39, 40, C(0xa89068)); for (int i = 29; i <= 39; i += 2) bp(i, 37, C(0xa89068));
-  addLight(34, 37, 0xffd890);
-  addBoat(0, 150, 126, -3.8f); addBoat(1, 60, 100, 2.4f); addBoat(0, 220, 178, -5.0f);
-  addFlies(4, 60, 60, 120);
+  pine(34, 70, 1.0f); pine(88, 72, 0.9f); pine(54, 100, 1.1f); pine(110, 96, 0.8f); pine(24, 128, 1.0f); pine(70, 140, 0.9f);
+  bush(130, 104, 3); bush(40, 160, 4);
+  // Wachturm (Talaia) oben auf dem Kamm
+  int tx = 70, ty = (int)c6ridge(70) + 1;
+  fillRect(tx - 4, ty - 20, tx + 4, ty, C(0xc8b088)); fillRect(tx - 5, ty - 22, tx + 5, ty - 20, C(0xa89068));
+  for (int i = tx - 5; i <= tx + 5; i += 2) bp(i, ty - 23, C(0xa89068));
+  fillRect(tx - 1, ty - 15, tx, ty - 12, C(0x3a2e28), M_WINDOW);
+  addLight(tx, ty - 23, 0xffd890);
+  addBoat(0, 200, 130, -3.8f); addBoat(1, 180, 104, 2.4f); addBoat(0, 220, 190, -5.0f);
+  addFlies(10, 60, 120, 140);
 }
 // Auto faehrt die Strasse entlang (nachts mit Scheinwerfern)
 static float carX = 0;
 static void animKueste(float dt) {
-  carX += dt * 6; if (carX > 140) carX = -10;
+  carX += dt * 6; if (carX > roadEnd - 6) carX = 0;
   int X = (int)carX, Y = (int)c6road(carX);
   for (int i = 0; i < 6; i++) { lp(X + i, Y - 1, C(0xd8403c)); lp(X + i, Y, C(0xd8403c)); }
   for (int i = 1; i < 5; i++) lp(X + i, Y - 2, C(0x9ad0e8));
@@ -340,6 +366,7 @@ static void glowKueste(float k) {
   int X = (int)carX, Y = (int)c6road(carX);
   for (int i = 0; i < 9; i++) {      // Lichtkegel der Scheinwerfer auf der Strasse
     int x = X + 6 + i, y = (int)c6road((float)x);
+    if (x > roadEnd) break;
     if ((unsigned)x < (unsigned)L && (unsigned)y < (unsigned)L) lf[y * L + x] = mix(lf[y * L + x], C(0xfff2c0), k * (1 - i / 9.0f));
   }
   if ((unsigned)X < (unsigned)L && (unsigned)Y < (unsigned)L) lf[Y * L + X] = mix(lf[Y * L + X], C(0xff3030), k);   // Ruecklicht
