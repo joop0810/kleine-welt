@@ -199,7 +199,7 @@ function status(){
     const w=s.wifi;$('wdot').className='dot '+(w.online?'ok':'err');
     $('wtxt').textContent=w.online?`WLAN „${w.ssid}“ (${w.rssi} dBm)`:(w.ap?'Einrichtungs-WLAN aktiv':'WLAN nicht verbunden');
     const st={ready:['ok','Home Assistant verbunden'],connecting:['','Verbinde mit Home Assistant …'],auth:['err','Token wird abgelehnt'],off:['err','Home Assistant noch nicht eingerichtet']}[s.ha.state];
-    $('hdot').className='dot '+st[0];$('htxt').textContent=st[1];
+    $('hdot').className='dot '+st[0];$('htxt').textContent=st[1]+(s.ha.error&&s.ha.state!=='ready'?' – '+s.ha.error:'');
     if(!$('ssid').value)$('ssid').value=w.ssid||'';
     if(!$('haurl').value)$('haurl').value=s.ha.url||'';
     $('hatok').placeholder=s.ha.token?'gespeichert – leer lassen zum Behalten':'Profil → Sicherheit → Token erstellen';

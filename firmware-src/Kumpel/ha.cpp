@@ -4,6 +4,7 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <esp_heap_caps.h>
+#include <stdarg.h>
 
 namespace ha {
 
@@ -57,6 +58,16 @@ static bool parseUrl(const char *url, Server &s) {
 
 State state() { return st; }
 
+static char lastErr[96] = "";
+const char *lastError() { return lastErr; }
+static void setErr(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(lastErr, sizeof lastErr, fmt, ap);
+  va_end(ap);
+  Serial.printf("HA: %s\n", lastErr);
+}
+
 static void closeWs() {
   if (cli) cli->stop();
   wsOpen = false;
@@ -72,6 +83,7 @@ void begin() {
 void setServer(const char *url, const char *tok) {
   closeWs();
   token = tok ? tok : "";
+  lastErr[0] = 0;
   if (!url || !url[0] || !parseUrl(url, srv) || !token.length()) { st = OFF; srv.host = ""; return; }
   st = CONNECTING;
   nextTry = 0;
@@ -135,8 +147,10 @@ static bool readExact(uint8_t *dst, size_t n, uint32_t timeoutMs = 3000) {
 
 static bool openWs() {
   cli = srv.tls ? (Client *)&secure : (Client *)&plain;
-  if (!srv.tls) plain.setTimeout(5);
-  if (!cli->connect(srv.host.c_str(), srv.port)) { Serial.printf("HA: keine Verbindung zu %s:%u\n", srv.host.c_str(), srv.port); return false; }
+  // Achtung: im Arduino-Core 3.x sind Zeitangaben in Millisekunden
+  bool conn = srv.tls ? secure.connect(srv.host.c_str(), srv.port, 8000) : plain.connect(srv.host.c_str(), srv.port, 5000);
+  if (!conn) { setErr("Keine Verbindung zu %s:%u", srv.host.c_str(), srv.port); return false; }
+  cli->setTimeout(5000);
   uint8_t key[16];
   for (int i = 0; i < 16; i += 4) { uint32_t r = esp_random(); memcpy(key + i, &r, 4); }
   char k64[28];
@@ -158,7 +172,8 @@ static bool openWs() {
     else if (!line.length()) break;
     line = "";
   }
-  if (!ok) { Serial.println("HA: WebSocket-Handshake abgelehnt"); cli->stop(); return false; }
+  if (!ok) { setErr("WebSocket abgelehnt (%s)", first ? "keine Antwort" : "falscher Port oder Proxy?"); cli->stop(); return false; }
+  lastErr[0] = 0;
   wsOpen = true;
   lastRx = lastPing = millis();
   rxLen = 0;
@@ -298,11 +313,12 @@ static void onMessage(const char *msg, size_t len) {
     sendText(s);
   } else if (!strcmp(type, "auth_ok")) {
     Serial.println("HA: angemeldet");
+    lastErr[0] = 0;
     st = READY;
     backoff = 2000;
     subscribe();
   } else if (!strcmp(type, "auth_invalid")) {
-    Serial.println("HA: Token ungueltig");
+    setErr("Token wird abgelehnt");
     st = AUTH_FAILED;
     closeWs();
     st = AUTH_FAILED;
@@ -367,7 +383,7 @@ void loop() {
     return;
   }
   if (!pump()) {
-    Serial.println("HA: Verbindung getrennt");
+    if (!lastErr[0]) setErr("Verbindung getrennt");
     State keep = st;
     closeWs();
     if (keep == AUTH_FAILED) st = AUTH_FAILED;

@@ -45,6 +45,7 @@ static void hStatus() {
   h["token"] = net::settings().haToken.length() > 0;   // das Token selbst verlaesst das Geraet nie
   static const char *st[] = {"off", "connecting", "auth", "ready"};
   h["state"] = st[ha::state()];
+  h["error"] = ha::lastError();
   d["tz"] = net::settings().tz;
   sendJson(d);
 }

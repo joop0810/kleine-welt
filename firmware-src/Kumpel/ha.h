@@ -16,6 +16,7 @@ void setServer(const char *url, const char *token);
 void resubscribe();       // nach Aenderung der Seiten/Hinweise
 void loop();
 State state();
+const char *lastError();   // letzter Verbindungsfehler (leer = keiner)
 bool call(const kb::Action &a);
 
 // Blockierend (1-5 s), nur fuer die Einstellungsseite.
