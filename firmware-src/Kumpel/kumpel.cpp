@@ -37,7 +37,7 @@ static const uint16_t K_BUBBLE_T = C(0x2a2622);
 
 // ------------------------------------------------------------------ Zustand
 static Config cfg;
-static Entity ents[MAX_PAGES + 1 + MAX_HINTS];
+static Entity ents[MAX_PAGES + 2 + MAX_HINTS];
 static int nEnts = 0;
 static int pageIdx[MAX_PAGES];   // gueltige Seiten (Index in cfg.pages)
 static int nShown = 0;
@@ -85,7 +85,7 @@ static int qHead = 0, qLen = 0;
 static bool skinChanged = false;
 
 // ------------------------------------------------------------------ Texte
-static const char *MOODS_N[] = {"neutral", "froehlich", "muede", "friert", "ueberrascht"};
+static const char *MOODS_N[] = {"neutral", "froehlich", "schlaeft", "friert", "ueberrascht", "muede"};
 static const char *SKINS_N[] = {"Leuchtaugen", "Troepfchen", "Kiesel"};
 static const char *PT_KEYS[] = {"", "climate", "light", "switch", "sensor", "button", "vacuum"};
 static const char *COND_KEYS[] = {"eq", "ne", "contains", "lt", "gt"};
@@ -111,6 +111,7 @@ void defaultConfig(Config &c) {
   c.brightDay = 170;
   c.brightNight = 25;
   c.homeAfter = 45;
+  c.hotAbove = 28;
 }
 
 // ------------------------------------------------------------------ Entities
@@ -154,6 +155,7 @@ void setConfig(const Config &c) {
     addEntity(p.entity);
   }
   addEntity(cfg.coldEntity);
+  addEntity(cfg.weatherEntity);
   for (int i = 0; i < cfg.nHints; i++) addEntity(cfg.hints[i].entity);
   for (int i = 0; i < nEnts; i++)
     for (int j = 0; j < nOld; j++)
@@ -232,13 +234,39 @@ static bool numeric(const char *s, float &v) {
 }
 
 // ------------------------------------------------------------------ Stimmung
-static bool sleeping() {
+static bool inSleepWindow() {
   if (cfg.sleepFrom < 0 || cfg.sleepTo < 0 || !clockValid) return false;
-  if (now - lastTouch < 25000 && lastTouch) return false;
   int m = (int)(hoursNow() * 60);
   if (cfg.sleepFrom <= cfg.sleepTo) return m >= cfg.sleepFrom && m < cfg.sleepTo;
   return m >= cfg.sleepFrom || m < cfg.sleepTo;
 }
+static bool sleeping() {
+  if (!inSleepWindow()) return false;
+  return !(lastTouch && now - lastTouch < 25000);   // Antippen weckt ihn kurz
+}
+// In den 45 Minuten vor der Schlafenszeit wird er langsam muede (0 = wach .. 1 = gleich schlafen)
+static float tiredness() {
+  if (cfg.sleepFrom < 0 || !clockValid || inSleepWindow()) return 0;
+  int m = (int)(hoursNow() * 60);
+  int d = (cfg.sleepFrom - m + 1440) % 1440;
+  return d > 0 && d <= 45 ? 1 - d / 45.0f : 0;
+}
+
+// Wetter aus Home Assistant (weather.*): Zustand und Aussentemperatur
+static Entity *weather() {
+  if (!cfg.weatherEntity[0]) return nullptr;
+  Entity *e = findEntity(cfg.weatherEntity);
+  return unavailable(e) ? nullptr : e;
+}
+static bool sunny() { Entity *e = weather(); return e && !strcmp(e->state, "sunny"); }
+static bool rainy() {
+  Entity *e = weather();
+  if (!e) return false;
+  static const char *R[] = {"rainy", "pouring", "lightning", "lightning-rainy", "hail"};
+  for (const char *r : R) if (!strcmp(e->state, r)) return true;
+  return false;
+}
+static bool hot() { Entity *e = weather(); return e && !isnan(e->target) && e->target >= cfg.hotAbove; }
 static bool cold() {
   if (!cfg.coldEntity[0]) return false;
   Entity *e = findEntity(cfg.coldEntity);
@@ -278,11 +306,23 @@ static int currentMood() {
   if (now < happyUntil) return M_HAPPY;
   if (sleeping()) return M_SLEEPY;
   if (cold()) return M_COLD;
+  if (tiredness() > 0) return M_TIRED;
   return M_NEUTRAL;
 }
 uint8_t wantBrightness() { return sleeping() ? cfg.brightNight : cfg.brightDay; }
 
 // ------------------------------------------------------------------ Figuren
+// Alles, was das Aussehen gerade bestimmt: Stimmung plus kleine Zusaetze
+struct Look {
+  int mood;
+  float bl;      // Blinzeln 0..1
+  float cross;   // schielen 0..1
+  float lid;     // muede Lider 0..1
+  float yawn;    // gaehnen 0..1
+  bool sad, shades, sweat;
+};
+static Look look = {M_NEUTRAL, 0, 0, 0, 0, false, false, false};   // pro Frame in tick() gesetzt
+
 static float blinkAmount() {
   if (now < blinkStart || now > blinkStart + 170) return 0;
   return sinf((now - blinkStart) / 170.0f * PI_F);
@@ -306,53 +346,90 @@ static void shiverLines(float cx, float cy, float w, float s, uint16_t c) {
   }
 }
 
+// Schweisstropfen, der langsam an der Seite herunterlaeuft
+static void sweatDrop(float x, float y, float s) {
+  float p = fmodf(now / 1800.0f, 1.0f);
+  gAlpha(p < 0.8f ? 1 : (1 - p) * 5);
+  gDrop(x, y + p * 26 * s, 0.14f * s, C(0x7cc7ff));
+  gAlpha(1);
+}
+
+// ein Brillenglas mit Rahmen und kleinem Glanzstrich
+static void lens(float x, float y, float w, float h, float s, uint16_t frame) {
+  gRRect(x - w / 2 - 3 * s, y - h / 2 - 3 * s, w + 6 * s, h + 6 * s, 11 * s, frame);
+  gRRect(x - w / 2, y - h / 2, w, h, 9 * s, C(0x24272e));
+  gCapsule(x - w * 0.28f, y - h * 0.05f, x - w * 0.08f, y - h * 0.3f, 2.4f * s, C(0x7a8290));
+}
+
+static bool calm(int mood) { return mood == M_NEUTRAL || mood == M_TIRED; }
+
 // Leuchtaugen: nur zwei Augen, Stimmung ueber Form und Farbe
-static void skinEyes(float cx, float cy, float s, int mood, float bl) {
+static void skinEyes(float cx, float cy, float s, const Look &L) {
   s *= 1.2f;   // Augen duerfen etwas groesser sein als die Figuren
+  int mood = L.mood;
   uint16_t col = mood == M_COLD ? C(0x8ab4ff) : C(0x5ee6d0);
   float gap = 62 * s, gx = gazeX * 9 * s, gy = gazeY * 8 * s;
+  bool yawning = L.yawn > 0.05f && calm(mood);
+  bool shades = L.shades && (mood == M_NEUTRAL || mood == M_HAPPY);
   if (mood == M_COLD) cx += sinf(now / 25.0f) * 2.2f * s;
   for (int side = -1; side <= 1; side += 2) {
-    float x = cx + side * gap + gx, y = cy + gy;
+    float x = cx + side * gap + gx - side * L.cross * gap * 0.42f, y = cy + gy;
+    if (shades) break;   // hinter der Sonnenbrille sieht man die Augen nicht
+    if (yawning) { gCapsule(x - 25 * s, y + 6 * s, x + 25 * s, y + 6 * s, 8 * s, col); continue; }
     switch (mood) {
-      case M_HAPPY:
-        gArc(x, y + 16 * s, 28 * s, 17 * s, 200, 340, col);
-        break;
-      case M_SLEEPY:
-        gCapsule(x - 26 * s, y + 8 * s, x + 26 * s, y + 8 * s, 7 * s, col);
-        break;
-      case M_SURPRISED:
-        gCircle(x, y, 33 * s, col);
-        break;
+      case M_HAPPY: gArc(x, y + 16 * s, 28 * s, 17 * s, 200, 340, col); break;
+      case M_SLEEPY: gCapsule(x - 26 * s, y + 8 * s, x + 26 * s, y + 8 * s, 7 * s, col); break;
+      case M_SURPRISED: gCircle(x, y, 33 * s, col); break;
       case M_COLD: {
-        float hl = 15 * s * (1 - bl) + 0.5f;
+        float hl = 15 * s * (1 - L.bl) + 0.5f;
         gCapsule(x, y - hl, x, y + hl, 17 * s, col);
         break;
       }
       default: {
-        float hl = 30 * s * (1 - bl);
-        float r = 25 * s * (1 - 0.6f * bl);
+        float hl = 30 * s * (1 - L.bl), r = 25 * s * (1 - 0.6f * L.bl);
         gCapsule(x, y - hl, x, y + hl, r, col);
+        float top = y - hl - r - 3, h = 2 * (hl + r) + 6;
+        // Lider sind einfach schwarze Flaechen - der Hintergrund ist schwarz
+        if (L.lid > 0.01f) gRRect(x - r - 4, top - 2, 2 * r + 8, h * 0.55f * L.lid + 2, 0, K_BG);
+        if (L.sad) gTriangle(x + side * (r + 5), top - 2, x - side * (r + 5), top - 2, x + side * (r + 5), top + h * 0.32f, K_BG);
       }
     }
   }
+  if (shades) {
+    for (int side = -1; side <= 1; side += 2) lens(cx + side * gap + gx, cy + gy, 72 * s, 56 * s, s, col);
+    gCapsule(cx - gap + gx + 39 * s, cy + gy - 10 * s, cx + gap + gx - 39 * s, cy + gy - 10 * s, 3.2f * s, col);
+  }
+  if (yawning) {   // Mund nur beim Gaehnen
+    float rx = (8 + 9 * L.yawn) * s, ry = (6 + 15 * L.yawn) * s;
+    gEllipse(cx + gx, cy + gy + 64 * s, rx, ry, col);
+    gEllipse(cx + gx, cy + gy + 64 * s, rx - 5 * s, ry - 5 * s, K_BG);
+  }
+  if (L.sweat && mood != M_SLEEPY) sweatDrop(cx + gap + gx + 44 * s, cy - 48 * s, s);
   if (mood == M_COLD) shiverLines(cx, cy, 118 * s, s, col);
   if (mood == M_SLEEPY && s > 0.6f) drawZ(cx, cy, s);
 }
 
 // Gesicht fuer Troepfchen und Kiesel (dunkle Augen, Baeckchen, Mund)
-static void face(float cx, float cy, float s, int mood, float bl, uint16_t ink, uint16_t cheek) {
+static void face(float cx, float cy, float s, const Look &L, uint16_t ink, uint16_t cheek, uint16_t body) {
+  int mood = L.mood;
   float ex = 23 * s, gx = gazeX * 5 * s, gy = gazeY * 4 * s;
+  bool yawning = L.yawn > 0.05f && calm(mood);
   for (int side = -1; side <= 1; side += 2) {
-    float x = cx + side * ex + gx, y = cy + gy;
-    if (mood == M_SLEEPY) gArc(x, y - 3 * s, 8 * s, 3.6f * s, 25, 155, ink);
+    float x = cx + side * ex + gx - side * L.cross * ex * 0.55f, y = cy + gy;
+    if (mood == M_SLEEPY || yawning) gArc(x, y - 3 * s, 8 * s, 3.6f * s, 25, 155, ink);
     else if (mood == M_HAPPY) gArc(x, y + 5 * s, 8 * s, 3.8f * s, 205, 335, ink);
-    else if (bl > 0.5f) gCapsule(x - 7 * s, y, x + 7 * s, y, 2.6f * s, ink);
-    else gCircle(x, y, (mood == M_SURPRISED ? 9.5f : 7.5f) * s, ink);
+    else if (L.bl > 0.5f) gCapsule(x - 7 * s, y, x + 7 * s, y, 2.6f * s, ink);
+    else {
+      float r = (mood == M_SURPRISED ? 9.5f : 7.5f) * s;
+      gCircle(x, y, r, ink);
+      if (L.lid > 0.01f) gRRect(x - r - 2, y - r - 2, 2 * r + 4, (2 * r + 3) * 0.55f * L.lid + 1, 0, body);
+    }
+    if (L.sad && calm(mood)) gCapsule(x - side * 7 * s, y - 16 * s, x + side * 6 * s, y - 11 * s, 2 * s, ink);
     gCircle(cx + side * 42 * s, cy + 15 * s, 8.5f * s, cheek);
   }
   float my = cy + 17 * s + gy;
-  switch (mood) {
+  if (yawning) gEllipse(cx + gx, my + 3 * s, (4 + 5 * L.yawn) * s, (4 + 8 * L.yawn) * s, ink);
+  else switch (mood) {
     case M_HAPPY: gArc(cx + gx, my - 4 * s, 13 * s, 4.5f * s, 20, 160, ink); break;
     case M_SLEEPY: gCircle(cx + gx, my + 2 * s, 4 * s, ink); break;
     case M_SURPRISED: gRing(cx + gx, my + 3 * s, 7 * s, 4 * s, ink); break;
@@ -362,24 +439,33 @@ static void face(float cx, float cy, float s, int mood, float bl, uint16_t ink, 
         gCapsule(x0, my + (k % 2 ? -2 : 2) * s, x0 + 6 * s, my + (k % 2 ? 2 : -2) * s, 1.8f * s, ink);
       }
       break;
-    default: gArc(cx + gx, my - 6 * s, 10 * s, 3.8f * s, 40, 140, ink);
+    default:
+      if (L.sad) gArc(cx + gx, my + 9 * s, 9 * s, 3.6f * s, 220, 320, ink);
+      else gArc(cx + gx, my - 6 * s, 10 * s, 3.8f * s, 40, 140, ink);
+  }
+  if (L.shades && (mood == M_NEUTRAL || mood == M_HAPPY)) {
+    for (int side = -1; side <= 1; side += 2) lens(cx + side * ex + gx, cy + gy, 28 * s, 19 * s, s * 0.5f, ink);
+    gCapsule(cx - ex + gx + 15 * s, cy + gy - 3 * s, cx + ex + gx - 15 * s, cy + gy - 3 * s, 1.8f * s, ink);
   }
 }
 
-static void skinDrop(float cx, float cy, float s, int mood, float bl) {
+static void skinDrop(float cx, float cy, float s, const Look &L) {
+  int mood = L.mood;
   float bob = sinf(now / 900.0f) * 4 * s;
-  if (mood == M_SLEEPY) bob *= 0.4f;
+  if (mood == M_SLEEPY || mood == M_TIRED) bob *= 0.4f;
   if (mood == M_COLD) cx += sinf(now / 25.0f) * 2 * s;
   float y = cy + bob - 8 * s;
   uint16_t body = mood == M_COLD ? C(0xa8dcf2) : C(0x3fa9d6);
   gDrop(cx, y, s, body);
   gEllipse(cx - 30 * s, y - 5 * s, 9 * s, 17 * s, mix565(body, 0xFFFF, 0.45f));   // Glanzlicht
-  face(cx, y + 28 * s, s, mood, bl, C(0x0b2a3a), C(0xff9fb0));
+  face(cx, y + 28 * s, s, L, C(0x0b2a3a), C(0xff9fb0), body);
+  if (L.sweat && mood != M_SLEEPY) sweatDrop(cx + 78 * s, y - 2 * s, s);
   if (mood == M_COLD) shiverLines(cx, y + 20 * s, 92 * s, s, body);
   if (mood == M_SLEEPY && s > 0.6f) drawZ(cx, cy, s);
 }
 
-static void skinPebble(float cx, float cy, float s, int mood, float bl) {
+static void skinPebble(float cx, float cy, float s, const Look &L) {
+  int mood = L.mood;
   float br = mood == M_SLEEPY ? sinf(now / 1600.0f) * 0.035f : sinf(now / 1100.0f) * 0.018f;
   if (mood == M_COLD) cx += sinf(now / 25.0f) * 2 * s;
   uint16_t body = mood == M_COLD ? C(0xc9d6e0) : C(0xe8d3a8);
@@ -388,18 +474,37 @@ static void skinPebble(float cx, float cy, float s, int mood, float bl) {
   gEllipse(cx, y + 4 * s, rx, ry, mix565(body, 0, 0.25f));   // Schatten unten
   gEllipse(cx, y, rx, ry, body);
   gEllipse(cx - 34 * s, y - 30 * s, 20 * s, 9 * s, mix565(body, 0xFFFF, 0.5f));
-  face(cx, y - 2 * s, s, mood, bl, C(0x4a3b22), C(0xf2a08c));
+  face(cx, y - 2 * s, s, L, C(0x4a3b22), C(0xf2a08c), body);
+  if (L.sweat && mood != M_SLEEPY) sweatDrop(cx + 96 * s, y - 34 * s, s);
   if (mood == M_COLD) shiverLines(cx, y, 108 * s, s, body);
   if (mood == M_SLEEPY && s > 0.6f) drawZ(cx, cy, s);
 }
 
 static void drawSkin(float cx, float cy, float s, int mood) {
-  float bl = mood == M_NEUTRAL || mood == M_COLD ? blinkAmount() : 0;
+  Look L = look;
+  L.mood = mood;
+  L.bl = (mood == M_NEUTRAL || mood == M_COLD || mood == M_TIRED) ? blinkAmount() : 0;
   switch (cfg.skin) {
-    case SK_DROP: skinDrop(cx, cy, s, mood, bl); break;
-    case SK_PEBBLE: skinPebble(cx, cy, s, mood, bl); break;
-    default: skinEyes(cx, cy, s, mood, bl);
+    case SK_DROP: skinDrop(cx, cy, s, L); break;
+    case SK_PEBBLE: skinPebble(cx, cy, s, L); break;
+    default: skinEyes(cx, cy, s, L);
   }
+}
+
+// kleines Regenwoelkchen ueber dem Kumpel
+static void rainCloud(float x, float y) {
+  for (int k = 0; k < 5; k++) {
+    float p = fmodf(now / 900.0f + k * 0.37f, 1.0f);
+    float dx = x - 26 + k * 13;
+    gAlpha(p < 0.8f ? 1 : (1 - p) * 5);
+    gCapsule(dx, y + 14 + p * 34, dx - 2, y + 22 + p * 34, 2.2f, C(0x6fb6ff));
+  }
+  gAlpha(1);
+  uint16_t c = C(0x8a929e);
+  gCircle(x - 20, y + 2, 16, c);
+  gCircle(x + 2, y - 8, 21, c);
+  gCircle(x + 24, y + 3, 15, c);
+  gRRect(x - 36, y + 2, 76, 17, 8, c);
 }
 
 // ------------------------------------------------------------------ Bausteine
@@ -642,7 +747,7 @@ static void pageVacuum(const PageCfg &p, Entity *e) {
 void hintText(int i, char *out, int n) {
   const HintCfg &h = cfg.hints[i];
   Entity *e = findEntity(h.entity);
-  const char *val = e && e->known ? translate(e->state) : "";
+  const char *val = !e || !e->known ? "" : (!strncmp(e->id, "calendar.", 9) && e->extra[0]) ? e->extra : translate(e->state);
   const char *p = strstr(h.text, "{}");
   if (!p) { snprintf(out, n, "%s", h.text); return; }
   snprintf(out, n, "%.*s%s%s", (int)(p - h.text), h.text, val, p + 2);
@@ -650,7 +755,7 @@ void hintText(int i, char *out, int n) {
 
 static void drawBubble(const char *text) {
   char t[64];
-  gFit(F_SMALL, text, t, sizeof t, 250);
+  gFit(F_SMALL, text, t, sizeof t, 282);
   int w = gTextW(F_SMALL, t) + 40;
   if (w < 120) w = 120;
   float x = CX - w / 2.0f, y = 62, h = 50;
@@ -659,9 +764,28 @@ static void drawBubble(const char *text) {
   gText(F_SMALL, CX, (int)(y + 11), t, K_BUBBLE_T, CENTER);
 }
 
+// Begruessung, kleine Ticks und Strecken
+static char greet[24] = "";
+static uint32_t greetUntil = 0, stretchStart = 0;
+static bool morningPending = false, windowInit = false, wasInWindow = false;
+static int tickType = 0;
+static uint32_t tickStart = 0, nextTick = 0, yawnStart = 0, nextYawn = 0;
+static const uint32_t TICK_MS[4] = {0, 1100, 1700, 800};
+
+static void sayGreet(const char *t, uint32_t ms) { snprintf(greet, sizeof greet, "%s", t); greetUntil = now + ms; }
+static float envelope(float p) { return p < 0.2f ? p / 0.2f : (p > 0.8f ? (1 - p) / 0.2f : 1); }
+static float tickProgress(int type) {
+  if (tickType != type || now - tickStart >= TICK_MS[type]) return -1;
+  return (now - tickStart) / (float)TICK_MS[type];
+}
+void testTick(int type) { tickType = type; tickStart = now; }
+
 static void pageHome(int mood) {
   float t = now / 1000.0f;
   float dx = sinf(t / 97.0f) * 7, dy = sinf(t / 131.0f) * 5;   // langsames Wandern gegen Einbrennen
+  float hp = tickProgress(3);
+  if (hp >= 0) dy -= fabsf(sinf(hp * 2 * PI_F)) * 20;          // zweimal huepfen
+  if (now - stretchStart < 1500 && stretchStart) dy -= sinf((now - stretchStart) / 1500.0f * PI_F) * 26;   // strecken
   if (info[0][0] && conn != CN_OK) {
     drawSkin(CX + dx, 170 + dy, 0.75f, mood);
     gText(F_SMALL, CX, 290, info[0], C(0xffc27a), CENTER);
@@ -670,13 +794,18 @@ static void pageHome(int mood) {
     return;
   }
   int list[MAX_HINTS], n = mood == M_SLEEPY ? 0 : activeHints(list);
-  if (n) {
+  bool greeting = now < greetUntil;
+  if (greeting) {
+    drawBubble(greet);
+  } else if (n) {
     if (now - hintSince > 4000) { hintShown++; hintSince = now; }
     char t[96];
     hintText(list[hintShown % n], t, sizeof t);
     drawBubble(t);
+  } else if (look.sad && calm(mood)) {
+    rainCloud(CX + 70 + dx, 118 + dy);
   }
-  drawSkin(CX + dx, (n ? 262 : 240) + dy, 1.15f, mood);
+  drawSkin(CX + dx, (n || greeting ? 262 : 240) + dy, 1.15f, mood);
   if (clockValid || testHours >= 0) {
     float h = hoursNow();
     char tm[8];
@@ -848,6 +977,10 @@ static void input(const Touch *pts, int n) {
   if (n > 0) lastTouch = now;
   if (sliding) { if (n == 0) down = false; return; }
   if (n > 0 && !down) {
+    if (morningPending && !sliding) {
+      morningPending = false;
+      if (hoursNow() < 12) { sayGreet("Guten Morgen!", 4500); stretchStart = now; happyUntil = now + 3000; }
+    }
     down = true; moved = longFired = dragging = false;
     sx = lx = pts[0].x; sy = ly = pts[0].y; downMs = now;
     tgt = hitTest(sx, sy, tgtSub);
@@ -904,10 +1037,40 @@ void tick(uint32_t nowMs, const Touch *pts, int n) {
     if (rnd() % 3 == 0) gazeTX = gazeTY = 0;
     nextGaze = now + (uint32_t)frand(1800, 5200);
   }
+  // Tagesablauf: abends "Gute Nacht!", morgens wartet er auf das erste Antippen
+  bool w = inSleepWindow();
+  if (windowInit && clockValid) {
+    if (w && !wasInWindow) { sayGreet("Gute Nacht!", 6000); morningPending = false; }
+    if (!w && wasInWindow) morningPending = true;
+  }
+  if (clockValid) { wasInWindow = w; windowInit = true; }
+  if (morningPending && hoursNow() >= 12) morningPending = false;
+
   int mood = currentMood();
+  // kleine Ticks ab und zu, nur wenn er einfach so dasitzt
+  if (now >= nextTick) {
+    if (page == 0 && mood == M_NEUTRAL && !sliding && !down) { tickType = 1 + rnd() % 3; tickStart = now; }
+    nextTick = now + (uint32_t)frand(14000, 40000);
+  }
+  if (tickType && now - tickStart >= TICK_MS[tickType]) tickType = 0;
+  // Gaehnen, wenn er abends muede wird
+  float tir = tiredness();
+  if (mood == M_TIRED && now >= nextYawn) { yawnStart = now; nextYawn = now + (uint32_t)frand(22000, 50000); }
+  float yp = (now - yawnStart) / 2200.0f;
+  look.yawn = yawnStart && yp < 1 && mood == M_TIRED ? sinf(yp * PI_F) : 0;
+  look.lid = mood == M_TIRED ? 0.3f + 0.45f * tir : 0;
+  float cp = tickProgress(1);
+  look.cross = cp >= 0 ? envelope(cp) : 0;
+  look.shades = sunny() && !inSleepWindow();
+  look.sad = rainy() && !look.shades;
+  look.sweat = hot();
+
   int dummy[MAX_HINTS];
   float tx = gazeTX, ty = gazeTY;
   if (page == 0 && mood == M_NEUTRAL && activeHints(dummy)) { tx = 0; ty = -1; }
+  float up = tickProgress(2);
+  if (up >= 0) { tx = up < 0.5f ? -0.4f : 0.4f; ty = -1.2f; }
+  if (look.cross > 0) tx = ty = 0;
   if (mood == M_SLEEPY || mood == M_HAPPY) tx = ty = 0;
   gazeX += (tx - gazeX) * 0.12f;
   gazeY += (ty - gazeY) * 0.12f;
@@ -937,6 +1100,14 @@ Debug debug() {
   d.sliding = sliding;
   Entity *e = page > 0 ? findEntity(cfg.pages[pageIdx[page - 1]].entity) : nullptr;
   d.shownTarget = e ? climateShown(e) : NAN;
+  d.tick = tickType;
+  d.shades = look.shades;
+  d.sad = look.sad;
+  d.sweat = look.sweat;
+  d.lid = look.lid;
+  d.yawn = look.yawn;
+  d.greet = now < greetUntil ? greet : "";
+  if (now < greetUntil) d.bubble = page == 0;
   return d;
 }
 

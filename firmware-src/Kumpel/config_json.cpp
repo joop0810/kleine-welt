@@ -41,6 +41,8 @@ bool configFromJson(const char *json, size_t len, Config &c) {
   }
   copy(c.coldEntity, sizeof c.coldEntity, doc["cold"]["entity"]);
   c.coldBelow = doc["cold"]["below"] | 18.0f;
+  copy(c.weatherEntity, sizeof c.weatherEntity, doc["weather"]["entity"]);
+  c.hotAbove = doc["weather"]["hot"] | 28.0f;
   if (doc["sleep"]["on"] | true) {
     c.sleepFrom = parseTime(doc["sleep"]["from"], c.sleepFrom);
     c.sleepTo = parseTime(doc["sleep"]["to"], c.sleepTo);
@@ -74,6 +76,8 @@ size_t configToJson(const Config &c, char *out, size_t outLen) {
   }
   doc["cold"]["entity"] = c.coldEntity;
   doc["cold"]["below"] = c.coldBelow;
+  doc["weather"]["entity"] = c.weatherEntity;
+  doc["weather"]["hot"] = c.hotAbove;
   char t[12];
   bool on = c.sleepFrom >= 0 && c.sleepTo >= 0;
   doc["sleep"]["on"] = on;

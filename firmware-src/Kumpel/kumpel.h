@@ -15,7 +15,7 @@ constexpr int MAX_PAGES = 8, MAX_HINTS = 4, ID_LEN = 64;
 enum PageType : uint8_t { P_NONE = 0, P_CLIMATE, P_LIGHT, P_SWITCH, P_SENSOR, P_BUTTON, P_VACUUM, PAGE_TYPES };
 enum Cond : uint8_t { C_EQ = 0, C_NE, C_CONTAINS, C_LT, C_GT, CONDS };
 enum Skin : uint8_t { SK_EYES = 0, SK_DROP, SK_PEBBLE, SKINS };
-enum Mood : uint8_t { M_NEUTRAL = 0, M_HAPPY, M_SLEEPY, M_COLD, M_SURPRISED, MOODS };
+enum Mood : uint8_t { M_NEUTRAL = 0, M_HAPPY, M_SLEEPY, M_COLD, M_SURPRISED, M_TIRED, MOODS };
 
 struct PageCfg {
   uint8_t type;
@@ -37,6 +37,8 @@ struct Config {
   int16_t sleepFrom, sleepTo;   // Minuten seit Mitternacht, -1 = nie schlafen
   uint8_t nHints;
   HintCfg hints[MAX_HINTS];
+  char weatherEntity[ID_LEN];   // weather.* fuer Sonnenbrille/Regen/Hitze, leer = aus
+  float hotAbove;               // ab dieser Aussentemperatur schwitzt er
   uint8_t brightDay, brightNight;
   uint8_t homeAfter;            // Sekunden ohne Beruehrung -> zurueck zum Kumpel
 };
@@ -55,6 +57,7 @@ struct Entity {
   uint8_t rgb[3];
   bool hasRgb, hasKelvin, hasBright;
   int battery;                           // -1 = unbekannt
+  char extra[48];                        // Kalender: Titel des aktuellen Termins
 };
 
 // Verbindungszustand (fuer Hinweise auf dem Startbildschirm)
@@ -94,10 +97,15 @@ struct Debug {
   bool bubble;
   bool sliding;
   float shownTarget; // angezeigte Solltemperatur (Klima-Seite)
+  int tick;          // 0 = keiner, 1 schielen, 2 nach oben gucken, 3 huepfen
+  bool shades, sad, sweat;
+  float lid, yawn;
+  const char *greet; // aktuelle Begruessung ("" = keine)
 };
 Debug debug();
 void hintText(int i, char *out, int n);   // Text der Sprechblase, {} = Wert der Entity
 void testSetHours(float h);   // < 0 = aus
+void testTick(int type);      // kleinen Tick sofort ausloesen
 const char *moodName(int m);
 const char *skinName(int s);
 const char *pageTypeKey(int t);   // "climate", "light", ... (fuer JSON)

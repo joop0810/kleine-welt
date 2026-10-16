@@ -128,7 +128,8 @@ int main(int argc, char **argv) {
   }
   c.skin = SK_EYES; setConfig(c);
 
-  // --- Hinweis
+  // --- Hinweis (vorher die "Gute Nacht!"-Blase aus dem Figurentest auslaufen lassen)
+  run(7);
   strcpy(h.state, "Papier"); run(1);
   check(debug().bubble, "Sprechblase bei Papier");
   save("hinweis");
@@ -152,6 +153,71 @@ int main(int argc, char **argv) {
     check(!debug().bubble, "bei 'nichts' keine Sprechblase");
     setConfig(c);
     strcpy(ent("sensor.abfall_morgen").state, "keine");
+  }
+
+  // --- kleine Ticks
+  {
+    const char *tn[4] = {"", "schielen", "oben", "huepfen"};
+    for (int ty = 1; ty <= 3; ty++) {
+      now += 30000; run(0.1f);
+      testTick(ty); run(ty == 3 ? 0.2f : 0.5f);
+      check(debug().tick == ty, (std::string("Tick ") + tn[ty]).c_str());
+      save(std::string("tick_") + tn[ty]);
+      run(2);
+    }
+  }
+
+  // --- Wetter und Tageszeit, fuer jede Figur
+  {
+    Config cw = c;
+    strcpy(cw.weatherEntity, "weather.home");
+    cw.hotAbove = 28;
+    cw.nHints = 1;
+    cw.hints[0] = {"calendar.geburtstage", C_EQ, "on", "Heute: {}"};
+    for (int sk = 0; sk < SKINS; sk++) {
+      cw.skin = sk; setConfig(cw);
+      Entity &wx = ent("weather.home");
+      wx.known = true; strcpy(wx.state, "sunny"); wx.target = 31;
+      now += 30000; testSetHours(14.5f); run(0.6f);
+      check(debug().shades && debug().sweat, "Sonne + Hitze: Sonnenbrille und Schweiss");
+      save(std::string("wetter") + std::to_string(sk) + "_sonne");
+      strcpy(wx.state, "rainy"); wx.target = 12; run(0.6f);
+      check(debug().sad && !debug().shades && !debug().sweat, "Regen: bedrueckt");
+      save(std::string("wetter") + std::to_string(sk) + "_regen");
+      strcpy(wx.state, "cloudy");
+      testSetHours(22.7f); run(1.2f);
+      check(debug().mood == M_TIRED && debug().lid > 0.3f, "kurz vor 23 Uhr muede");
+      for (int k = 0; k < 600 && debug().yawn < 0.6f; k++) run(0.1f);   // warten, bis er gaehnt
+      check(debug().yawn > 0, "und gaehnt");
+      save(std::string("wetter") + std::to_string(sk) + "_gaehnt");
+    }
+    cw.skin = SK_EYES; setConfig(cw);
+    // Gute Nacht beim Uebergang ins Schlaffenster
+    now += 30000; testSetHours(22.95f); run(0.3f);
+    testSetHours(23.02f); run(0.3f);
+    check(!strcmp(debug().greet, "Gute Nacht!"), "Gute Nacht um 23 Uhr");
+    save("gute_nacht");
+    // Guten Morgen beim ersten Antippen nach dem Aufwachen
+    testSetHours(6.95f); run(7);
+    testSetHours(7.05f); run(0.5f);
+    check(!strlen(debug().greet), "morgens wartet er aufs Antippen");
+    tap(233, 240); run(0.5f);
+    check(!strcmp(debug().greet, "Guten Morgen!") && debug().mood == M_HAPPY, "Guten Morgen beim ersten Antippen");
+    save("guten_morgen");
+    run(5);
+    tap(233, 240); run(0.3f);
+    check(!strlen(debug().greet), "nur einmal pro Morgen");
+    // Geburtstag aus dem Kalender
+    testSetHours(14.5f); run(3);
+    Entity &cal = ent("calendar.geburtstage");
+    cal.known = true; strcpy(cal.state, "on"); strcpy(cal.extra, "Lea hat Geburtstag");
+    run(0.3f);
+    char t[96];
+    hintText(0, t, sizeof t);
+    check(debug().bubble && !strcmp(t, "Heute: Lea hat Geburtstag"), "Geburtstag aus dem Kalender");
+    save("geburtstag");
+    strcpy(ent("weather.home").state, "cloudy");
+    setConfig(c);
   }
 
   // --- lange druecken = naechste Figur

@@ -84,12 +84,14 @@ button:disabled{opacity:.5}
 <section><h2>Reaktionen</h2>
 <label>Friert bei Kälte – Temperatur von</label><input id="cold" list="ents_temp" placeholder="z. B. sensor.wohnzimmer_temperatur (leer = aus)">
 <label>… unter (°C)</label><input id="coldb" type="number" step="0.5">
-<label style="margin-top:16px"><input type="checkbox" id="sleepon">Nachts schlafen und dimmen</label>
+<label style="margin-top:16px">Wetter (Sonnenbrille bei Sonne, Regenwolke bei Regen)</label><input id="weather" list="ents_weather" placeholder="z. B. weather.forecast_home (leer = aus)">
+<label>Schwitzt ab Außentemperatur (°C)</label><input id="hot" type="number" step="0.5">
+<label style="margin-top:16px"><input type="checkbox" id="sleepon">Nachts schlafen und dimmen (vorher wird er müde und gähnt)</label>
 <div class="grid2"><div><label>von</label><input id="sfrom" type="time"></div><div><label>bis</label><input id="sto" type="time"></div></div>
 <h2 style="margin-top:20px">Hinweise <span class="sub">(Sprechblase)</span></h2>
 <div id="hints"></div>
 <div style="margin-top:12px"><button class="sm" id="hadd">+ Hinweis</button></div>
-<p class="hint">Tipp: <b>{}</b> im Text wird durch den aktuellen Wert ersetzt. Beispiel: Entity „sensor.abfall_morgen“, Bedingung „ist nicht“, Wert „nichts“, Text „Morgen: {}“ → „Morgen: Papier, Bio“.</p>
+<p class="hint">Tipp: <b>{}</b> im Text wird durch den aktuellen Wert ersetzt. Beispiel: Entity „sensor.abfall_morgen“, Bedingung „ist nicht“, Wert „nichts“, Text „Morgen: {}“ → „Morgen: Papier, Bio“.<br>Geburtstage: Entity „calendar.geburtstage“, Bedingung „ist gleich“, Wert „on“, Text „Heute: {}“ → Titel des Termins.</p>
 </section>
 
 <section><h2>Anzeige</h2>
@@ -140,6 +142,7 @@ function lists(){
   const mk=(id,f)=>{let o=ents.filter(f).map(e=>`<option value="${e.i}">${esc(e.n)}${e.u?' ('+esc(e.s)+' '+esc(e.u)+')':''}</option>`).join('');html+=`<datalist id="${id}">${o}</datalist>`};
   for(const t in DOM)mk('ents_'+t,e=>!DOM[t]||DOM[t].includes(e.i.split('.')[0]));
   mk('ents_temp',e=>e.i.startsWith('climate.')||/°/.test(e.u||''));
+  mk('ents_weather',e=>e.i.startsWith('weather.'));
   mk('ents_all',()=>true);
   let d=$('dl');if(!d){d=document.createElement('div');d.id='dl';document.body.appendChild(d)}d.innerHTML=html;
 }
@@ -181,12 +184,14 @@ function renderHints(){
 function fill(){
   renderSkins();renderPages();renderHints();
   $('cold').value=cfg.cold.entity||'';$('coldb').value=cfg.cold.below;
+  const wt=cfg.weather||{};$('weather').value=wt.entity||'';$('hot').value=wt.hot??28;
   $('sleepon').checked=cfg.sleep.on;$('sfrom').value=cfg.sleep.from;$('sto').value=cfg.sleep.to;
   $('bd').value=cfg.bright.day;$('bn').value=cfg.bright.night;$('home').value=cfg.homeAfter;
   $('bdv').textContent=cfg.bright.day;$('bnv').textContent=cfg.bright.night;
 }
 function collect(){
   cfg.cold={entity:$('cold').value.trim(),below:parseFloat($('coldb').value)||18};
+  cfg.weather={entity:$('weather').value.trim(),hot:parseFloat($('hot').value)||28};
   cfg.sleep={on:$('sleepon').checked,from:$('sfrom').value||'23:00',to:$('sto').value||'07:00'};
   cfg.bright={day:+$('bd').value,night:+$('bn').value};
   cfg.homeAfter=+$('home').value||45;

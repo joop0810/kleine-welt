@@ -205,6 +205,7 @@ static void applyAttrs(kb::Entity &e, JsonObjectConst a) {
     }
   }
   if (!a["battery_level"].isNull()) e.battery = a["battery_level"].as<int>();
+  if (a["message"].is<const char *>()) snprintf(e.extra, sizeof e.extra, "%s", a["message"].as<const char *>());
 }
 
 static void resetEntity(kb::Entity &e) {
@@ -244,6 +245,7 @@ static void handleEvent(JsonObjectConst ev) {
         if (!strcmp(k, "hvac_action")) e->action[0] = 0;
         if (!strcmp(k, "current_temperature")) e->cur = NAN;
         if (!strcmp(k, "temperature")) e->target = NAN;
+        if (!strcmp(k, "message")) e->extra[0] = 0;
       }
       e->known = true;
     }
@@ -286,7 +288,7 @@ static void onMessage(const char *msg, size_t len) {
     fInit = true;
     JsonDocument attrs;
     for (const char *k : {"friendly_name", "unit_of_measurement", "current_temperature", "temperature", "min_temp", "max_temp",
-                          "target_temp_step", "hvac_action", "brightness", "rgb_color", "supported_color_modes", "battery_level"})
+                          "target_temp_step", "hvac_action", "brightness", "rgb_color", "supported_color_modes", "battery_level", "message"})
       attrs[k] = true;
     filter["id"] = true;
     filter["type"] = true;
