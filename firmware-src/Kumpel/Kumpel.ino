@@ -26,7 +26,7 @@
 #include "ha.h"
 #include "web.h"
 
-#define FW_VERSION "1.0.1"
+#define FW_VERSION "1.0.2"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
 Arduino_CO5300 *panel = new Arduino_CO5300(bus, LCD_RESET, 0, LCD_WIDTH, LCD_HEIGHT, 6, 0, 0, 0);
@@ -108,7 +108,7 @@ static void updateConn() {
       ipLine = net::ip();
       kb::setConn(kb::CN_NO_HA, "Einrichten im Browser:", "kumpel.local", ipLine.c_str());
       break;
-    case ha::CONNECTING: kb::setConn(kb::CN_HA); break;
+    case ha::CONNECTING: kb::setConn(ha::recentlyReady() ? kb::CN_OK : kb::CN_HA); break;   // kurze Neuverbindung nicht anzeigen
     case ha::AUTH_FAILED: kb::setConn(kb::CN_AUTH); break;
     case ha::READY: kb::setConn(kb::CN_OK); break;
   }

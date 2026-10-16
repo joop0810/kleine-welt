@@ -173,7 +173,6 @@ static bool openWs() {
     line = "";
   }
   if (!ok) { setErr("WebSocket abgelehnt (%s)", first ? "keine Antwort" : "falscher Port oder Proxy?"); cli->stop(); return false; }
-  lastErr[0] = 0;
   wsOpen = true;
   lastRx = lastPing = millis();
   rxLen = 0;
@@ -313,7 +312,6 @@ static void onMessage(const char *msg, size_t len) {
     sendText(s);
   } else if (!strcmp(type, "auth_ok")) {
     Serial.println("HA: angemeldet");
-    lastErr[0] = 0;
     st = READY;
     backoff = 2000;
     subscribe();
@@ -334,29 +332,34 @@ static void onMessage(const char *msg, size_t len) {
 static bool pump() {
   while (cli->available() >= 2) {
     uint8_t h[2];
-    if (!readExact(h, 2)) return false;
+    if (!readExact(h, 2)) { setErr("Lesefehler (Kopf)"); return false; }
     bool fin = h[0] & 0x80;
     uint8_t op = h[0] & 0x0F;
     uint64_t len = h[1] & 0x7F;
-    if (len == 126) { uint8_t e[2]; if (!readExact(e, 2)) return false; len = (e[0] << 8) | e[1]; }
-    else if (len == 127) { uint8_t e[8]; if (!readExact(e, 8)) return false; len = 0; for (int i = 0; i < 8; i++) len = (len << 8) | e[i]; }
+    if (len == 126) { uint8_t e[2]; if (!readExact(e, 2)) { setErr("Lesefehler (Laenge)"); return false; } len = (e[0] << 8) | e[1]; }
+    else if (len == 127) { uint8_t e[8]; if (!readExact(e, 8)) { setErr("Lesefehler (Laenge)"); return false; } len = 0; for (int i = 0; i < 8; i++) len = (len << 8) | e[i]; }
     uint8_t mask[4] = {0, 0, 0, 0};
     bool masked = h[1] & 0x80;
     if (masked && !readExact(mask, 4)) return false;
     if (op >= 8) {   // Steuerframes: ping/pong/close
       uint8_t p[126];
-      if (len > 125 || !readExact(p, len)) return false;
+      if (len > 125 || !readExact(p, len)) { setErr("Lesefehler (Steuerframe)"); return false; }
       if (op == 9) sendFrame(10, p, len);
-      if (op == 8) return false;
+      if (op == 8) {   // Home Assistant beendet: Code + Grund mitschreiben
+        int code = len >= 2 ? (p[0] << 8 | p[1]) : 0;
+        p[len < 125 ? len : 125] = 0;
+        setErr("HA hat getrennt (Code %d%s%s)", code, len > 2 ? ": " : "", len > 2 ? (const char *)p + 2 : "");
+        return false;
+      }
       lastRx = millis();
       continue;
     }
     if (op != 0) rxLen = 0;   // neue Nachricht (Text/Binaer)
-    if (rxLen + len > MAX_MSG) { Serial.println("HA: Nachricht zu gross"); return false; }
+    if (rxLen + len > MAX_MSG) { setErr("Nachricht zu gross (%u Byte)", (unsigned)(rxLen + len)); return false; }
     uint8_t *nb = (uint8_t *)heap_caps_realloc(rxBuf, rxLen + len + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!nb) return false;
+    if (!nb) { setErr("Zu wenig Speicher"); return false; }
     rxBuf = nb;
-    if (!readExact(rxBuf + rxLen, len, 6000)) return false;
+    if (!readExact(rxBuf + rxLen, len, 6000)) { setErr("Nachricht unvollstaendig (%u Byte erwartet)", (unsigned)len); return false; }
     if (masked) for (uint64_t i = 0; i < len; i++) rxBuf[rxLen + i] ^= mask[i & 3];
     rxLen += len;
     lastRx = millis();
@@ -367,8 +370,13 @@ static bool pump() {
       if (!wsOpen) return false;
     }
   }
-  return cli->connected();
+  if (!cli->connected()) { setErr("Verbindung vom Netz getrennt"); return false; }
+  return true;
 }
+
+static uint32_t drops = 0, readySince = 0;
+uint32_t dropCount() { return drops; }
+bool recentlyReady() { return st == READY || (readySince && millis() - readySince < 10000); }
 
 void loop() {
   if (st == OFF || WiFi.status() != WL_CONNECTED) { if (wsOpen) closeWs(); return; }
@@ -382,8 +390,11 @@ void loop() {
     }
     return;
   }
+  if (st == READY) readySince = millis();
   if (!pump()) {
     if (!lastErr[0]) setErr("Verbindung getrennt");
+    if (st == READY) { drops++; readySince = millis(); }
+    Serial.printf("HA: Abbruch #%u: %s\n", (unsigned)drops, lastErr);
     State keep = st;
     closeWs();
     if (keep == AUTH_FAILED) st = AUTH_FAILED;
@@ -402,7 +413,8 @@ void loop() {
     sendText(String("{\"id\":") + msgId++ + ",\"type\":\"ping\"}");
   }
   if (now - lastRx > 75000) {
-    Serial.println("HA: keine Antwort mehr - neu verbinden");
+    setErr("Keine Antwort mehr (75 s)");
+    if (st == READY) drops++;
     closeWs();
     nextTry = 0;
   }

@@ -46,6 +46,8 @@ static void hStatus() {
   static const char *st[] = {"off", "connecting", "auth", "ready"};
   h["state"] = st[ha::state()];
   h["error"] = ha::lastError();
+  h["drops"] = ha::dropCount();
+  d["uptime"] = millis() / 1000;
   d["tz"] = net::settings().tz;
   sendJson(d);
 }

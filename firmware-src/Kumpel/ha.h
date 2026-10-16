@@ -17,6 +17,8 @@ void resubscribe();       // nach Aenderung der Seiten/Hinweise
 void loop();
 State state();
 const char *lastError();   // letzter Verbindungsfehler (leer = keiner)
+uint32_t dropCount();      // Abbrueche seit dem Start
+bool recentlyReady();      // verbunden oder erst seit < 10 s getrennt (kein Flackern)
 bool call(const kb::Action &a);
 
 // Blockierend (1-5 s), nur fuer die Einstellungsseite.
