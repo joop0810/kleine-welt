@@ -136,6 +136,23 @@ int main(int argc, char **argv) {
   check(debug().bubble, "Sprechblase bei 'enthaelt bio'");
   strcpy(h.state, "keine"); run(0.2f);
   check(!debug().bubble, "keine Sprechblase sonst");
+  {
+    Config c2 = c;
+    c2.nHints = 1;
+    c2.hints[0] = {"sensor.abfall_morgen", C_NE, "nichts", "Morgen: {}"};
+    setConfig(c2);
+    strcpy(ent("sensor.abfall_morgen").state, "Papier, Bio");
+    run(0.3f);
+    char t[96];
+    hintText(0, t, sizeof t);
+    check(debug().bubble && !strcmp(t, "Morgen: Papier, Bio"), "Platzhalter {} zeigt den Wert");
+    save("hinweis_platzhalter");
+    strcpy(ent("sensor.abfall_morgen").state, "nichts");
+    run(0.3f);
+    check(!debug().bubble, "bei 'nichts' keine Sprechblase");
+    setConfig(c);
+    strcpy(ent("sensor.abfall_morgen").state, "keine");
+  }
 
   // --- lange druecken = naechste Figur
   hold(233, 240, 1.0f);

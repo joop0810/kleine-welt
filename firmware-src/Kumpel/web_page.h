@@ -89,7 +89,7 @@ button:disabled{opacity:.5}
 <h2 style="margin-top:20px">Hinweise <span class="sub">(Sprechblase)</span></h2>
 <div id="hints"></div>
 <div style="margin-top:12px"><button class="sm" id="hadd">+ Hinweis</button></div>
-<p class="hint">Beispiel: Entity „sensor.abfall_morgen“, Bedingung „enthält“, Wert „Papier“, Text „Morgen kommt Papier!“.</p>
+<p class="hint">Tipp: <b>{}</b> im Text wird durch den aktuellen Wert ersetzt. Beispiel: Entity „sensor.abfall_morgen“, Bedingung „ist nicht“, Wert „nichts“, Text „Morgen: {}“ → „Morgen: Papier, Bio“.</p>
 </section>
 
 <section><h2>Anzeige</h2>

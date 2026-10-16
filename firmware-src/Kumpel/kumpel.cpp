@@ -638,6 +638,16 @@ static void pageVacuum(const PageCfg &p, Entity *e) {
 }
 
 // ------------------------------------------------------------------ Startseite
+// Hinweistext mit Platzhalter: "{}" wird durch den aktuellen Zustand der Entity ersetzt
+void hintText(int i, char *out, int n) {
+  const HintCfg &h = cfg.hints[i];
+  Entity *e = findEntity(h.entity);
+  const char *val = e && e->known ? translate(e->state) : "";
+  const char *p = strstr(h.text, "{}");
+  if (!p) { snprintf(out, n, "%s", h.text); return; }
+  snprintf(out, n, "%.*s%s%s", (int)(p - h.text), h.text, val, p + 2);
+}
+
 static void drawBubble(const char *text) {
   char t[64];
   gFit(F_SMALL, text, t, sizeof t, 250);
@@ -662,7 +672,9 @@ static void pageHome(int mood) {
   int list[MAX_HINTS], n = mood == M_SLEEPY ? 0 : activeHints(list);
   if (n) {
     if (now - hintSince > 4000) { hintShown++; hintSince = now; }
-    drawBubble(cfg.hints[list[hintShown % n]].text);
+    char t[96];
+    hintText(list[hintShown % n], t, sizeof t);
+    drawBubble(t);
   }
   drawSkin(CX + dx, (n ? 262 : 240) + dy, 1.15f, mood);
   if (clockValid || testHours >= 0) {

@@ -96,6 +96,7 @@ struct Debug {
   float shownTarget; // angezeigte Solltemperatur (Klima-Seite)
 };
 Debug debug();
+void hintText(int i, char *out, int n);   // Text der Sprechblase, {} = Wert der Entity
 void testSetHours(float h);   // < 0 = aus
 const char *moodName(int m);
 const char *skinName(int s);
