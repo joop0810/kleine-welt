@@ -157,8 +157,8 @@ int main(int argc, char **argv) {
 
   // --- kleine Ticks
   {
-    const char *tn[4] = {"", "schielen", "oben", "huepfen"};
-    for (int ty = 1; ty <= 3; ty++) {
+    const char *tn[5] = {"", "schielen", "oben", "huepfen", "zunge"};
+    for (int ty = 1; ty <= 4; ty++) {
       now += 30000; run(0.1f);
       testTick(ty); run(ty == 3 ? 0.2f : 0.5f);
       check(debug().tick == ty, (std::string("Tick ") + tn[ty]).c_str());

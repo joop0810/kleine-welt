@@ -320,8 +320,11 @@ struct Look {
   float lid;     // muede Lider 0..1
   float yawn;    // gaehnen 0..1
   bool sad, shades, sweat;
+  float talk;    // Mund bewegt sich beim Sprechen 0..1
+  bool wink, tongue;
 };
-static Look look = {M_NEUTRAL, 0, 0, 0, 0, false, false, false};   // pro Frame in tick() gesetzt
+static Look look = {M_NEUTRAL, 0, 0, 0, 0, false, false, false, 0, false, false};
+static const uint16_t K_TONGUE = C(0xff7a93);   // pro Frame in tick() gesetzt
 
 static float blinkAmount() {
   if (now < blinkStart || now > blinkStart + 170) return 0;
@@ -372,10 +375,13 @@ static void skinEyes(float cx, float cy, float s, const Look &L) {
   bool yawning = L.yawn > 0.05f && calm(mood);
   bool shades = L.shades && (mood == M_NEUTRAL || mood == M_HAPPY);
   if (mood == M_COLD) cx += sinf(now / 25.0f) * 2.2f * s;
+  float mx = cx + gx * 0.6f, my = cy + gy * 0.6f + 60 * s;   // Mund
+  cy -= 10 * s;                                            // Augen etwas hoeher, Platz fuer den Mund
   for (int side = -1; side <= 1; side += 2) {
     float x = cx + side * gap + gx - side * L.cross * gap * 0.42f, y = cy + gy;
     if (shades) break;   // hinter der Sonnenbrille sieht man die Augen nicht
     if (yawning) { gCapsule(x - 25 * s, y + 6 * s, x + 25 * s, y + 6 * s, 8 * s, col); continue; }
+    if (L.wink && side == 1 && calm(mood)) { gArc(x, y + 16 * s, 28 * s, 17 * s, 200, 340, col); continue; }   // zwinkern
     switch (mood) {
       case M_HAPPY: gArc(x, y + 16 * s, 28 * s, 17 * s, 200, 340, col); break;
       case M_SLEEPY: gCapsule(x - 26 * s, y + 8 * s, x + 26 * s, y + 8 * s, 7 * s, col); break;
@@ -399,10 +405,39 @@ static void skinEyes(float cx, float cy, float s, const Look &L) {
     for (int side = -1; side <= 1; side += 2) lens(cx + side * gap + gx, cy + gy, 72 * s, 56 * s, s, col);
     gCapsule(cx - gap + gx + 39 * s, cy + gy - 10 * s, cx + gap + gx - 39 * s, cy + gy - 10 * s, 3.2f * s, col);
   }
-  if (yawning) {   // Mund nur beim Gaehnen
-    float rx = (8 + 9 * L.yawn) * s, ry = (6 + 15 * L.yawn) * s;
-    gEllipse(cx + gx, cy + gy + 64 * s, rx, ry, col);
-    gEllipse(cx + gx, cy + gy + 64 * s, rx - 5 * s, ry - 5 * s, K_BG);
+  // ---- Mund: zu jeder Stimmung ein eigener
+  float t = 5 * s;   // Strichstaerke
+  if (yawning) {
+    float rx = (8 + 9 * L.yawn) * s, ry = (6 + 13 * L.yawn) * s;
+    gEllipse(mx, my, rx, ry, col);
+    gEllipse(mx, my, rx - t, ry - t, K_BG);
+  } else if (L.talk > 0.05f && mood != M_SLEEPY) {           // sprechen: Mund klappt auf und zu
+    float ry = (3 + 10 * L.talk) * s;
+    gEllipse(mx, my, 12 * s, ry, col);
+    if (ry > t + 1) gEllipse(mx, my, 12 * s - t, ry - t, K_BG);
+  } else if (L.tongue && calm(mood)) {                       // Zunge rausstrecken
+    gEllipse(mx + 5 * s, my + 9 * s, 8 * s, 10 * s, K_TONGUE);
+    gArc(mx, my - 14 * s, 18 * s, t, 40, 140, col);
+  } else if (shades) {
+    gArc(mx + 6 * s, my - 14 * s, 20 * s, t, 25, 115, col);  // laessiges Grinsen
+  } else switch (mood) {
+    case M_HAPPY:                                            // offenes Lachen (halber Kreis) mit Zunge
+      gCircle(mx, my - 6 * s, 20 * s, col);
+      gRRect(mx - 22 * s, my - 30 * s, 44 * s, 24 * s, 0, K_BG);
+      gEllipse(mx, my + 8 * s, 8 * s, 4 * s, K_TONGUE);
+      break;
+    case M_SLEEPY: gCircle(mx, my, (4 + 1.5f * sinf(now / 800.0f)) * s, mix565(0, col, 0.7f)); break;
+    case M_SURPRISED: gRing(mx, my, 11 * s, t, col); break;
+    case M_COLD:
+      for (int k = 0; k < 4; k++) {
+        float x0 = mx - 16 * s + k * 8 * s;
+        gCapsule(x0, my + (k % 2 ? -3 : 3) * s, x0 + 8 * s, my + (k % 2 ? 3 : -3) * s, 2.4f * s, col);
+      }
+      break;
+    case M_TIRED: gCapsule(mx - 12 * s, my, mx + 12 * s, my + 2 * s, 2.6f * s, col); break;
+    default:
+      if (L.sad) gArc(mx, my + 14 * s, 16 * s, t, 225, 315, col);   // bedrueckt
+      else gArc(mx, my - 12 * s, 16 * s, t, 55, 125, col);         // kleines Laecheln
   }
   if (L.sweat && mood != M_SLEEPY) sweatDrop(cx + gap + gx + 44 * s, cy - 48 * s, s);
   if (mood == M_COLD) shiverLines(cx, cy, 118 * s, s, col);
@@ -417,7 +452,7 @@ static void face(float cx, float cy, float s, const Look &L, uint16_t ink, uint1
   for (int side = -1; side <= 1; side += 2) {
     float x = cx + side * ex + gx - side * L.cross * ex * 0.55f, y = cy + gy;
     if (mood == M_SLEEPY || yawning) gArc(x, y - 3 * s, 8 * s, 3.6f * s, 25, 155, ink);
-    else if (mood == M_HAPPY) gArc(x, y + 5 * s, 8 * s, 3.8f * s, 205, 335, ink);
+    else if (mood == M_HAPPY || (L.wink && side == 1 && calm(mood))) gArc(x, y + 5 * s, 8 * s, 3.8f * s, 205, 335, ink);
     else if (L.bl > 0.5f) gCapsule(x - 7 * s, y, x + 7 * s, y, 2.6f * s, ink);
     else {
       float r = (mood == M_SURPRISED ? 9.5f : 7.5f) * s;
@@ -429,7 +464,11 @@ static void face(float cx, float cy, float s, const Look &L, uint16_t ink, uint1
   }
   float my = cy + 17 * s + gy;
   if (yawning) gEllipse(cx + gx, my + 3 * s, (4 + 5 * L.yawn) * s, (4 + 8 * L.yawn) * s, ink);
-  else switch (mood) {
+  else if (L.talk > 0.05f && mood != M_SLEEPY) gEllipse(cx + gx, my + 1 * s, 6 * s, (2 + 6 * L.talk) * s, ink);
+  else if (L.tongue && calm(mood)) {
+    gEllipse(cx + gx + 3 * s, my + 4 * s, 4.5f * s, 6 * s, K_TONGUE);
+    gArc(cx + gx, my - 6 * s, 10 * s, 3.8f * s, 40, 140, ink);
+  } else switch (mood) {
     case M_HAPPY: gArc(cx + gx, my - 4 * s, 13 * s, 4.5f * s, 20, 160, ink); break;
     case M_SLEEPY: gCircle(cx + gx, my + 2 * s, 4 * s, ink); break;
     case M_SURPRISED: gRing(cx + gx, my + 3 * s, 7 * s, 4 * s, ink); break;
@@ -770,7 +809,7 @@ static uint32_t greetUntil = 0, stretchStart = 0;
 static bool morningPending = false, windowInit = false, wasInWindow = false;
 static int tickType = 0;
 static uint32_t tickStart = 0, nextTick = 0, yawnStart = 0, nextYawn = 0;
-static const uint32_t TICK_MS[4] = {0, 1100, 1700, 800};
+static const uint32_t TICK_MS[5] = {0, 1100, 1700, 800, 1500};
 
 static void sayGreet(const char *t, uint32_t ms) { snprintf(greet, sizeof greet, "%s", t); greetUntil = now + ms; }
 static float envelope(float p) { return p < 0.2f ? p / 0.2f : (p > 0.8f ? (1 - p) / 0.2f : 1); }
@@ -795,29 +834,37 @@ static void pageHome(int mood) {
   }
   int list[MAX_HINTS], n = mood == M_SLEEPY ? 0 : activeHints(list);
   bool greeting = now < greetUntil;
+  char said[96] = "";
   if (greeting) {
-    drawBubble(greet);
+    snprintf(said, sizeof said, "%s", greet);
   } else if (n) {
     if (now - hintSince > 4000) { hintShown++; hintSince = now; }
-    char t[96];
-    hintText(list[hintShown % n], t, sizeof t);
-    drawBubble(t);
-  } else if (look.sad && calm(mood)) {
+    hintText(list[hintShown % n], said, sizeof said);
+  }
+  // neue Sprechblase -> 1,6 s lang "sprechen"
+  static char lastSaid[96] = "";
+  static uint32_t talkStart = 0;
+  if (said[0] && strcmp(said, lastSaid)) talkStart = now;
+  snprintf(lastSaid, sizeof lastSaid, "%s", said);
+  if (said[0]) drawBubble(said);
+  look.talk = said[0] && now - talkStart < 1600 ? fabsf(sinf((now - talkStart) / 1000.0f * 11)) : 0;
+  if (!said[0] && look.sad && calm(mood)) {
     rainCloud(CX + 70 + dx, 118 + dy);
   }
-  drawSkin(CX + dx, (n || greeting ? 262 : 240) + dy, 1.15f, mood);
+  drawSkin(CX + dx, (said[0] ? 252 : 240) + dy, 1.15f, mood);
+  look.talk = 0;
   if (clockValid || testHours >= 0) {
     float h = hoursNow();
     char tm[8];
     snprintf(tm, sizeof tm, "%02d:%02d", (int)h, (int)(h * 60) % 60);
-    gText(F_MED, CX, 362, tm, mood == M_SLEEPY ? K_DIMMER : K_DIM, CENTER);
+    gText(F_MED, CX, 368, tm, mood == M_SLEEPY ? K_DIMMER : K_DIM, CENTER);
   }
   if (conn != CN_OK) {
     const char *s = conn == CN_AUTH ? "Token ung\xC3\xBCltig" : conn == CN_HA ? "Verbinde mit HA\xE2\x80\xA6"
                   : conn == CN_WIFI ? "Verbinde mit WLAN\xE2\x80\xA6" : conn == CN_NO_HA ? "Home Assistant fehlt" : "Kein WLAN";
     char t[64];
     gFit(F_SMALL, s, t, sizeof t, 280);
-    gText(F_SMALL, CX, 398, t, K_WARN, CENTER);
+    gText(F_SMALL, CX, 406, t, K_WARN, CENTER);
   }
 }
 
@@ -1049,7 +1096,7 @@ void tick(uint32_t nowMs, const Touch *pts, int n) {
   int mood = currentMood();
   // kleine Ticks ab und zu, nur wenn er einfach so dasitzt
   if (now >= nextTick) {
-    if (page == 0 && mood == M_NEUTRAL && !sliding && !down) { tickType = 1 + rnd() % 3; tickStart = now; }
+    if (page == 0 && mood == M_NEUTRAL && !sliding && !down) { tickType = 1 + rnd() % 4; tickStart = now; }
     nextTick = now + (uint32_t)frand(14000, 40000);
   }
   if (tickType && now - tickStart >= TICK_MS[tickType]) tickType = 0;
@@ -1061,6 +1108,8 @@ void tick(uint32_t nowMs, const Touch *pts, int n) {
   look.lid = mood == M_TIRED ? 0.3f + 0.45f * tir : 0;
   float cp = tickProgress(1);
   look.cross = cp >= 0 ? envelope(cp) : 0;
+  look.wink = look.tongue = tickProgress(4) >= 0;
+  look.talk = 0;   // wird auf der Startseite gesetzt, wenn eine Sprechblase neu erscheint
   look.shades = sunny() && !inSleepWindow();
   look.sad = rainy() && !look.shades;
   look.sweat = hot();
