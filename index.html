@@ -141,7 +141,7 @@
 <script>
   document.querySelectorAll('esp-web-install-button').forEach(btn => {
     const el = document.getElementById(btn.dataset.v);
-    fetch(btn.getAttribute('manifest'), { cache: 'no-store' }).then(r => r.json()).then(m => {
+    fetch(btn.getAttribute('manifest') + '?t=' + Date.now(), { cache: 'no-store' }).then(r => r.json()).then(m => {
       if (m.new_install_prompt_erase !== true) {
         // Sicherheitsnetz: ohne diese Angabe wuerde esp-web-tools ungefragt loeschen
         btn.remove();
@@ -149,6 +149,8 @@
         return;
       }
       el.textContent = 'Firmware ' + m.version + ' · ESP32-S3 · 16 MB Flash, OPI-PSRAM';
+      // Installer immer auf die eben frisch geladene Version zeigen lassen (GitHub Pages cached bis zu 10 Minuten)
+      btn.setAttribute('manifest', btn.getAttribute('manifest').split('?')[0] + '?v=' + m.version);
     }).catch(() => { btn.remove(); el.textContent = 'Noch nicht gebaut – kommt gleich.'; });
   });
 </script>
