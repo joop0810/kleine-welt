@@ -408,11 +408,12 @@ void loop() {
     nextTry = 0;
     return;
   }
+  now = millis();   // pump() hat lastRx evtl. NACH dem obigen millis() gesetzt -> neu lesen
   if (st == READY && now - lastPing > 30000) {
     lastPing = now;
     sendText(String("{\"id\":") + msgId++ + ",\"type\":\"ping\"}");
   }
-  if (now - lastRx > 75000) {
+  if ((int32_t)(now - lastRx) > 75000) {
     setErr("Keine Antwort mehr (75 s)");
     if (st == READY) drops++;
     closeWs();

@@ -72,35 +72,67 @@ void gCircle(float cx, float cy, float r, uint16_t c) {
   });
 }
 
+// Ring-Band zeilenweise: nur die Pixel im Band werden angefasst (kein Rechteck-Scan)
+template <typename F>
+static void band(float cx, float cy, float r, float h, uint16_t c, F dist) {
+  float ro = r + h + 1, ri = r - h - 1;
+  int y0 = (int)floorf(cy - ro) + oy, y1 = (int)ceilf(cy + ro) + oy;
+  if (y0 < 0) y0 = 0;
+  if (y1 > SCR - 1) y1 = SCR - 1;
+  for (int y = y0; y <= y1; y++) {
+    float py = y - oy + 0.5f, dy = py - cy;
+    float qo = ro * ro - dy * dy;
+    if (qo <= 0) continue;
+    float wo = sqrtf(qo);
+    float qi = ri > 0 ? ri * ri - dy * dy : -1;
+    float wi = qi > 0 ? sqrtf(qi) : -1;
+    // zwei Spannen links und rechts (oder eine, wenn die Zeile das Loch nicht trifft)
+    for (int side = 0; side < 2; side++) {
+      float a, b;
+      if (wi < 0) { if (side) break; a = cx - wo; b = cx + wo; }
+      else if (!side) { a = cx - wo; b = cx - wi; }
+      else { a = cx + wi; b = cx + wo; }
+      int xa = (int)floorf(a) + ox, xb = (int)ceilf(b) + ox;
+      if (xa < 0) xa = 0;
+      if (xb > SCR - 1) xb = SCR - 1;
+      for (int x = xa; x <= xb; x++) {
+        float d = dist(x - ox + 0.5f, py);
+        if (d >= 0.5f) continue;
+        int al = d <= -0.5f ? 256 : (int)((0.5f - d) * 256);
+        blend(x, y, c, al);
+      }
+    }
+  }
+}
+
 void gRing(float cx, float cy, float r, float thick, uint16_t c) {
-  float h = thick * 0.5f, lo = r - h - 1, hi = r + h + 1;
-  float lo2 = lo > 0 ? lo * lo : 0, hi2 = hi * hi;
-  paint(cx - r - h, cy - r - h, cx + r + h, cy + r + h, c, [&](float x, float y) {
-    float dx = x - cx, dy = y - cy, q = dx * dx + dy * dy;
-    if (q < lo2 || q > hi2) return 1.0f;
-    return fabsf(sqrtf(q) - r) - h;
+  float h = thick * 0.5f;
+  band(cx, cy, r, h, c, [&](float x, float y) {
+    float dx = x - cx, dy = y - cy;
+    return fabsf(sqrtf(dx * dx + dy * dy) - r) - h;
   });
 }
 
 void gArc(float cx, float cy, float r, float thick, float a0, float a1, uint16_t c) {
   if (a1 < a0) { float t = a0; a0 = a1; a1 = t; }
   if (a1 - a0 >= 360) { gRing(cx, cy, r, thick, c); return; }
-  float h = thick * 0.5f, lo = r - h - 1, hi = r + h + 1;
-  float lo2 = lo > 0 ? lo * lo : 0, hi2 = hi * hi;
+  float h = thick * 0.5f;
   const float D = 3.14159265f / 180;
-  float mid = (a0 + a1) * 0.5f, half = (a1 - a0) * 0.5f;
-  float e0x = cx + r * cosf(a0 * D), e0y = cy + r * sinf(a0 * D);
-  float e1x = cx + r * cosf(a1 * D), e1y = cy + r * sinf(a1 * D);
-  paint(cx - r - h, cy - r - h, cx + r + h, cy + r + h, c, [&](float x, float y) {
-    float dx = x - cx, dy = y - cy, q = dx * dx + dy * dy;
-    if (q < lo2 || q > hi2) return 1.0f;
-    float ang = atan2f(dy, dx) / D;
-    float rel = fmodf(ang - mid + 540.0f, 360.0f) - 180.0f;   // -180..180 um die Mitte
-    if (fabsf(rel) <= half) return fabsf(sqrtf(q) - r) - h;
-    // ausserhalb: Abstand zum naechsten runden Ende
-    float d0 = sqrtf((x - e0x) * (x - e0x) + (y - e0y) * (y - e0y));
-    float d1 = sqrtf((x - e1x) * (x - e1x) + (y - e1y) * (y - e1y));
-    return (d0 < d1 ? d0 : d1) - h;
+  float u0x = cosf(a0 * D), u0y = sinf(a0 * D), u1x = cosf(a1 * D), u1y = sinf(a1 * D);
+  float e0x = cx + r * u0x, e0y = cy + r * u0y, e1x = cx + r * u1x, e1y = cy + r * u1y;
+  bool big = a1 - a0 > 180;
+  // Ist die Richtung (dx,dy) im Bogen? Nur Kreuzprodukte, kein atan2 (zu langsam auf dem ESP32)
+  auto inside = [&](float dx, float dy) {
+    float c0 = u0x * dy - u0y * dx;   // >= 0: im Uhrzeigersinn hinter a0
+    float c1 = dx * u1y - dy * u1x;   // >= 0: vor a1
+    return big ? (c0 >= 0 || c1 >= 0) : (c0 >= 0 && c1 >= 0);
+  };
+  band(cx, cy, r, h, c, [&](float x, float y) {
+    float dx = x - cx, dy = y - cy;
+    if (inside(dx, dy)) return fabsf(sqrtf(dx * dx + dy * dy) - r) - h;
+    float d0 = (x - e0x) * (x - e0x) + (y - e0y) * (y - e0y);
+    float d1 = (x - e1x) * (x - e1x) + (y - e1y) * (y - e1y);
+    return sqrtf(d0 < d1 ? d0 : d1) - h;
   });
 }
 
