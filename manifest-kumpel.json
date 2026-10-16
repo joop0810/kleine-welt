@@ -1,0 +1,29 @@
+{
+  "name": "Kumpel 1.0.0",
+  "version": "1.0.0",
+  "new_install_prompt_erase": true,
+  "new_install_improv_wait_time": 20,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        {
+          "path": "firmware-kumpel/bootloader.bin?v=31b3c1be45dc5a76",
+          "offset": 0
+        },
+        {
+          "path": "firmware-kumpel/partitions.bin?v=ace02503447d0f47",
+          "offset": 32768
+        },
+        {
+          "path": "firmware-kumpel/boot_app0.bin?v=f94c5d786a7a8fab",
+          "offset": 57344
+        },
+        {
+          "path": "firmware-kumpel/app.bin?v=c8d33ea884dec896",
+          "offset": 65536
+        }
+      ]
+    }
+  ]
+}

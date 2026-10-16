@@ -1,5 +1,13 @@
 # Kleine Welt
 
+Zwei Firmwares für das **Waveshare ESP32-S3-Touch-AMOLED-1.75**, auswählbar auf der Installer-Seite:
+
+- **Mallorca-Deko** (`firmware-src/KleineWelt`) – siehe unten.
+- **Kumpel** (`firmware-src/Kumpel`) – ein Kumpel mit Gefühlen (Figur wählbar: Leuchtaugen,
+  Tröpfchen, Kiesel) und selbst zusammengestellten Home-Assistant-Seiten zum Wischen.
+
+## Mallorca-Deko
+
 Wohlfühl-Deko für das **Waveshare ESP32-S3-Touch-AMOLED-1.75** (466×466 rundes AMOLED):
 zehn kleine Mallorca-Szenen (Cala, Felsbucht, Fischerhafen, Olivenfinca, Bergdorf, Steilküste,
 Windmühlen, Palma, Strandbar, Felsentor), die alle 10 Minuten überblenden. Jede folgt der echten
@@ -39,6 +47,40 @@ PC-Test:
 
 ```
 g++ -O2 -std=c++17 -Ifirmware-src/KleineWelt host/sim.cpp firmware-src/KleineWelt/game.cpp -o sim && mkdir -p out && ./sim out
+```
+
+## Kumpel
+
+Startseite: der Kumpel mit Uhrzeit. Er freut sich beim Antippen, ist beim Schütteln überrascht,
+friert unter einer einstellbaren Temperatur, schläft nachts und zeigt Hinweise in einer
+Sprechblase (z. B. Müllabfuhr). Wischen blättert durch bis zu acht Seiten:
+Heizung/Klima, Licht (Helligkeit + Farben), Schalter, Anzeige, Szene/Skript/Taste, Saugroboter.
+
+Einrichtung: WLAN direkt im Web-Installer (Improv) oder über das Einrichtungs-WLAN
+`Kumpel-Setup`; danach `http://kumpel.local` → Home-Assistant-Adresse + langlebiges Token,
+Seiten und Reaktionen per Auswahlliste. Gespeichert wird nur im NVS-Namensraum `kumpel`.
+
+| Pfad | Inhalt |
+|---|---|
+| `firmware-src/Kumpel/kumpel.cpp` | Kern (ohne Arduino): Figuren, Stimmungen, Seiten, Gesten |
+| `firmware-src/Kumpel/gfx.cpp`, `font_data.cpp` | geglättete Formen und Schrift (Poppins, SIL OFL) |
+| `firmware-src/Kumpel/ha.cpp` | Home Assistant: WebSocket (`subscribe_entities`, `call_service`) + REST |
+| `firmware-src/Kumpel/net.cpp` | WLAN, Einrichtungs-WLAN, Improv, Internetzeit, Speicher |
+| `firmware-src/Kumpel/web.cpp`, `web_page.h` | Einstellungsseite und JSON-Schnittstelle |
+| `host/kumpel_sim.cpp` | PC-Test: alle Figuren/Stimmungen, alle Seiten, Gesten, Aktionen, JSON |
+| `tools/make_font.py` | erzeugt `font_data.cpp` aus Poppins |
+| `.github/workflows/kumpel.yml` | Cloud-Build → `firmware-kumpel/` + `manifest-kumpel.json` |
+
+Selbst bauen (zusätzlich ArduinoJson 7.4.2):
+
+```
+arduino-cli compile --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashSize=16M,PSRAM=opi,PartitionScheme=app3M_fat9M_16MB" --export-binaries firmware-src/Kumpel
+```
+
+PC-Test:
+
+```
+K=firmware-src/Kumpel; g++ -O2 -std=c++17 -I$K -I<ArduinoJson>/src host/kumpel_sim.cpp $K/kumpel.cpp $K/gfx.cpp $K/font_data.cpp $K/config_json.cpp -o kumpel_sim && mkdir -p kumpel-out && ./kumpel_sim kumpel-out
 ```
 
 ## Pins für später (Taster-Matrix 2×3)

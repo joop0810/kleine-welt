@@ -4,79 +4,121 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Kleine Welt – Installer</title>
-  <meta name="description" content="Kleine Welt auf das Waveshare ESP32-S3-Touch-AMOLED-1.75 flashen – direkt im Browser.">
+  <meta name="description" content="Kleine Welt (Mallorca-Deko) oder Kumpel (Home-Assistant-Kumpel) auf das Waveshare ESP32-S3-Touch-AMOLED-1.75 flashen – direkt im Browser.">
   <style>
     :root {
       --bg: #120e18; --panel: #1d1726; --line: #2e2540; --text: #efe8f5; --muted: #a99fb8;
-      --teal: #2fa39a; --teal-d: #1f6e6a; --warm: #ff9a40; --danger: #ff6b7d;
+      --teal: #2fa39a; --teal-d: #1f6e6a; --warm: #ff9a40; --danger: #ff6b7d; --mint: #5ee6d0;
     }
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); color: var(--text);
       font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-    main { max-width: 720px; margin: 0 auto; padding: 40px 16px 64px; }
-    header { display: flex; gap: 28px; align-items: center; flex-wrap: wrap; }
-    .orb { width: 220px; height: 220px; border-radius: 50%; overflow: hidden; flex: none;
-      box-shadow: 0 0 0 6px #000, 0 0 0 8px var(--line), 0 20px 60px rgba(255,154,64,.12); }
-    .orb img { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+    main { max-width: 760px; margin: 0 auto; padding: 40px 16px 64px; }
     h1 { font-size: 2.4rem; line-height: 1.1; margin: 0 0 8px; letter-spacing: .5px; }
     .tag { color: var(--warm); font-weight: 600; text-transform: uppercase; font-size: .78rem; letter-spacing: 2px; }
-    .lead { color: var(--muted); margin: 6px 0 0; max-width: 34ch; }
+    .lead { color: var(--muted); margin: 6px 0 0; max-width: 52ch; }
     section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px; margin-top: 24px; }
     h2 { font-size: 1.1rem; margin: 0 0 12px; }
     ol { margin: 0; padding-left: 1.3em; } li { margin: 6px 0; }
     .warn { border-color: #5a2b37; background: #241520; }
     .warn strong { color: var(--danger); }
+    .pick { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 24px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+    .orb { width: 168px; height: 168px; border-radius: 50%; overflow: hidden; flex: none;
+      box-shadow: 0 0 0 6px #000, 0 0 0 8px var(--line), 0 20px 60px rgba(255,154,64,.12); }
+    .orb img { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+    .card.kumpel .orb { box-shadow: 0 0 0 6px #000, 0 0 0 8px var(--line), 0 20px 60px rgba(94,230,208,.14); }
+    .card.kumpel .orb img { image-rendering: auto; }
+    .card h2 { font-size: 1.35rem; margin: 18px 0 4px; }
+    .card p { color: var(--muted); margin: 0 0 16px; font-size: .95rem; flex: 1; }
     esp-web-install-button button.go {
-      appearance: none; border: 0; border-radius: 999px; padding: 14px 28px; font: 600 1.05rem system-ui, sans-serif;
+      appearance: none; border: 0; border-radius: 999px; padding: 13px 26px; font: 600 1.02rem system-ui, sans-serif;
       color: #08100f; background: var(--teal); cursor: pointer; }
     esp-web-install-button button.go:hover { background: #3bbdb2; }
+    .card.kumpel esp-web-install-button button.go { background: var(--mint); }
     .note { color: var(--muted); font-size: .92rem; margin-top: 12px; }
     table { border-collapse: collapse; width: 100%; }
     td { padding: 7px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
     td:first-child { color: var(--warm); white-space: nowrap; padding-right: 16px; font-weight: 600; }
     tr:last-child td { border-bottom: 0; }
+    .k td:first-child { color: var(--mint); }
     code { background: #0d0a12; padding: 1px 6px; border-radius: 5px; }
     footer { color: var(--muted); font-size: .85rem; margin-top: 32px; }
     a { color: var(--teal); }
+    @media (max-width: 600px) { .pick { grid-template-columns: 1fr; } td:first-child { white-space: normal; } }
   </style>
 </head>
 <body>
 <main>
-  <header>
-    <div class="orb"><img src="docs/vorschau.png" alt="Palma mit Kathedrale am Abend"></div>
-    <div>
-      <div class="tag">Wohlfühl-Deko 0.4</div>
-      <h1>Kleine Welt</h1>
-      <p class="lead">Zehn kleine Mallorca-Szenen für die Wand – mit echtem Tageslauf, Booten, Windmühlen und Sonnenuntergang. Für das Waveshare ESP32-S3-Touch-AMOLED-1.75.</p>
+  <div class="tag">Waveshare ESP32-S3-Touch-AMOLED-1.75</div>
+  <h1>Kleine Welt</h1>
+  <p class="lead">Zwei Firmwares für das runde AMOLED-Board – such dir eine aus. Wechseln geht jederzeit, beide Seiten behalten ihre Einstellungen.</p>
+
+  <div class="pick">
+    <div class="card">
+      <div class="orb"><img src="docs/vorschau.png" alt="Palma mit Kathedrale am Abend"></div>
+      <h2>Mallorca-Deko</h2>
+      <p>Zehn kleine Mallorca-Szenen für die Wand – mit echtem Tageslauf, Booten, Windmühlen und Sonnenuntergang. Ganz ohne WLAN.</p>
+      <esp-web-install-button manifest="manifest.json" data-v="v-welt">
+        <button class="go" slot="activate">Mallorca installieren</button>
+        <span slot="unsupported">Dieser Browser kann kein Web Serial. Bitte Chrome oder Edge am Computer verwenden.</span>
+        <span slot="not-allowed">Web Serial braucht eine sichere Verbindung (https).</span>
+      </esp-web-install-button>
+      <div class="note" id="v-welt">Firmware wird geladen …</div>
     </div>
-  </header>
+    <div class="card kumpel">
+      <div class="orb"><img src="docs/kumpel_vorschau.png" alt="Kumpel mit Leuchtaugen und Sprechblase"></div>
+      <h2>Kumpel</h2>
+      <p>Ein kleiner Kumpel mit Gefühlen – und zum Wischen deine Home-Assistant-Seiten: Heizung, Licht, Schalter, Sensoren, Szenen, Saugroboter.</p>
+      <esp-web-install-button manifest="manifest-kumpel.json" data-v="v-kumpel">
+        <button class="go" slot="activate">Kumpel installieren</button>
+        <span slot="unsupported">Dieser Browser kann kein Web Serial. Bitte Chrome oder Edge am Computer verwenden.</span>
+        <span slot="not-allowed">Web Serial braucht eine sichere Verbindung (https).</span>
+      </esp-web-install-button>
+      <div class="note" id="v-kumpel">Firmware wird geladen …</div>
+    </div>
+  </div>
 
   <section>
     <h2>Installieren</h2>
     <ol>
       <li>Chrome oder Edge am Computer öffnen (Web Serial).</li>
       <li>Board per USB-C anschließen.</li>
-      <li>Auf <em>Installieren</em> klicken und den Port wählen.</li>
+      <li>Oben die gewünschte Firmware wählen und den Port auswählen.</li>
       <li>Bei <strong>„Erase device“ das Kästchen leer lassen</strong> → <em>Next</em> → <em>Install</em>.</li>
+      <li>Nur beim Kumpel: Danach fragt der Installer nach dem WLAN – eintragen, fertig. Dann auf <em>Visit device</em> klicken.</li>
     </ol>
-    <p style="margin-top:18px">
-      <esp-web-install-button manifest="manifest.json">
-        <button class="go" slot="activate">Installieren</button>
-        <span slot="unsupported">Dieser Browser kann kein Web Serial. Bitte Chrome oder Edge am Computer verwenden.</span>
-        <span slot="not-allowed">Web Serial braucht eine sichere Verbindung (https).</span>
-      </esp-web-install-button>
-    </p>
-    <p class="note" id="version">Firmware wird geladen …</p>
   </section>
 
   <section class="warn">
-    <h2>TamaPoke-Spielstand bleibt erhalten</h2>
-    <p>Kleine Welt ersetzt nur das Programm. TamaPokes Spielstand und die Ruhmeshalle liegen in eigenen Speicherbereichen, die Kleine Welt weder liest noch beschreibt – <strong>solange „Erase device“ nicht angehakt ist</strong>. Ein Haken dort löscht alles unwiderruflich.</p>
-    <p class="note">Zurück zu TamaPoke: einfach TamaPoke wieder über dessen Installer flashen (ebenfalls ohne „Erase device“). Der alte Stand ist dann wieder da.</p>
+    <h2>Spielstände und Einstellungen bleiben erhalten</h2>
+    <p>Beide Firmwares ersetzen nur das Programm. TamaPokes Spielstand und die Ruhmeshalle liegen in eigenen Speicherbereichen, die hier weder gelesen noch beschrieben werden – <strong>solange „Erase device“ nicht angehakt ist</strong>. Ein Haken dort löscht alles unwiderruflich, auch die Kumpel-Einstellungen.</p>
+    <p class="note">Der Kumpel speichert WLAN, Home-Assistant-Zugang und Seiten in seinem eigenen Bereich. Wer zwischendurch die Mallorca-Deko oder TamaPoke flasht und später zurückwechselt, findet alles wieder vor.</p>
   </section>
 
   <section>
-    <h2>Zehn Mallorca-Szenen</h2>
+    <h2>Kumpel einrichten</h2>
+    <ol>
+      <li><strong>WLAN</strong>: direkt im Installer nach dem Flashen. Alternativ zeigt der Kumpel nach 30 Sekunden ohne WLAN das Einrichtungs-WLAN <code>Kumpel-Setup</code> an – damit verbinden, die Einstellungsseite öffnet sich (sonst <code>192.168.4.1</code> aufrufen).</li>
+      <li><strong>Einstellungsseite</strong>: <code>http://kumpel.local</code> im Browser öffnen (oder die IP, die der Kumpel anzeigt).</li>
+      <li><strong>Home Assistant</strong>: Adresse eintragen (z. B. <code>http://homeassistant.local:8123</code>) und ein langlebiges Zugriffstoken (in Home Assistant: Profil → Sicherheit → Token erstellen). Am besten für einen eigenen Benutzer.</li>
+      <li><strong>Seiten zusammenstellen</strong>: Art wählen, Entity aus der Liste suchen, fertig. Bis zu acht Seiten, Reihenfolge frei.</li>
+      <li><strong>Reaktionen</strong>: Temperatur fürs Frieren, Schlafenszeit und bis zu vier Hinweise für die Sprechblase (z. B. „Morgen kommt Papier!“).</li>
+    </ol>
+    <h2 style="margin-top:20px">Bedienung</h2>
+    <table class="k">
+      <tr><td>Waagerecht wischen</td><td>nächste bzw. vorige Seite</td></tr>
+      <tr><td>Kumpel antippen</td><td>freut sich</td></tr>
+      <tr><td>Kumpel lange drücken</td><td>andere Figur: Leuchtaugen, Tröpfchen oder Kiesel</td></tr>
+      <tr><td>Board schütteln</td><td>Kumpel ist überrascht</td></tr>
+      <tr><td>Bogen ziehen</td><td>Solltemperatur bzw. Helligkeit einstellen</td></tr>
+      <tr><td>Großer Knopf</td><td>Licht/Schalter an und aus, Szene oder Skript auslösen</td></tr>
+    </table>
+    <p class="note">Nach 45 Sekunden ohne Berührung geht es zurück zum Kumpel. Nachts schläft er und das Display wird gedimmt – Antippen weckt ihn.</p>
+  </section>
+
+  <section>
+    <h2>Mallorca-Deko: zehn Szenen</h2>
     <p class="note" style="margin-top:0">Die Cala · Felsbucht · Fischerhafen · Olivenfinca · Bergdorf · Steilküste · Windmühlen · Palma · Strandbar · Felsentor. Alle 10 Minuten blendet die nächste Szene sanft über – das sieht lebendig aus und schont das AMOLED vor Einbrennen.</p>
     <h2 style="margin-top:18px">Antippen (alles freiwillig)</h2>
     <table>
@@ -88,25 +130,27 @@
       <tr><td>Lange drücken</td><td>Uhr stellen: Pfeile tippen (1er-Schritte) oder gedrückt halten (zählt schnell), dann OK</td></tr>
     </table>
     <p class="note">Jede Szene folgt der echten Uhrzeit: Sonnenauf- und -untergang je nach Monat, goldene Stunde, nachts Mond, Sterne, Fensterlicht und Laternen. Im Februar und März blühen die Mandelbäume. Die Helligkeit wird nachts gedimmt.</p>
-    <p class="note">Die Uhrzeit kommt aus der eingebauten Uhr des Boards – dieselbe, die TamaPoke benutzt. Stellst du sie hier, gilt sie auch für TamaPoke.</p>
+    <p class="note">Die Uhrzeit kommt aus der eingebauten Uhr des Boards – dieselbe, die TamaPoke benutzt. Stellst du sie hier, gilt sie auch für TamaPoke. Der Kumpel stellt sie automatisch aus dem Internet.</p>
   </section>
 
   <footer>
-    © 2026 Kleine Welt · Alle Rechte vorbehalten. Installer: <a href="https://github.com/esphome/esp-web-tools">esp-web-tools</a> (Apache-2.0).
+    © 2026 Kleine Welt · Alle Rechte vorbehalten. Installer: <a href="https://github.com/esphome/esp-web-tools">esp-web-tools</a> (Apache-2.0). Schrift im Kumpel: Poppins (SIL OFL 1.1).
   </footer>
 </main>
 <script type="module" src="vendor/esp-web-tools-10.4.0/install-button.js"></script>
 <script>
-  fetch('manifest.json', { cache: 'no-store' }).then(r => r.json()).then(m => {
-    const el = document.getElementById('version');
-    if (m.new_install_prompt_erase !== true) {
-      // Sicherheitsnetz: ohne diese Angabe wuerde esp-web-tools ungefragt loeschen
-      document.querySelector('esp-web-install-button').remove();
-      el.textContent = 'Installer gesperrt: Manifest ohne Lösch-Abfrage.';
-      return;
-    }
-    el.textContent = 'Firmware ' + m.version + ' · ESP32-S3 · 16 MB Flash, OPI-PSRAM';
-  }).catch(() => {});
+  document.querySelectorAll('esp-web-install-button').forEach(btn => {
+    const el = document.getElementById(btn.dataset.v);
+    fetch(btn.getAttribute('manifest'), { cache: 'no-store' }).then(r => r.json()).then(m => {
+      if (m.new_install_prompt_erase !== true) {
+        // Sicherheitsnetz: ohne diese Angabe wuerde esp-web-tools ungefragt loeschen
+        btn.remove();
+        el.textContent = 'Installer gesperrt: Manifest ohne Lösch-Abfrage.';
+        return;
+      }
+      el.textContent = 'Firmware ' + m.version + ' · ESP32-S3 · 16 MB Flash, OPI-PSRAM';
+    }).catch(() => { btn.remove(); el.textContent = 'Noch nicht gebaut – kommt gleich.'; });
+  });
 </script>
 </body>
 </html>

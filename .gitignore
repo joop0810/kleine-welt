@@ -3,3 +3,6 @@ host/sim
 host/out/
 sim-out/
 sim
+firmware-src/Kumpel/build/
+kumpel_sim
+kumpel-out/

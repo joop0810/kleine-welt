@@ -1,0 +1,80 @@
+name: Firmware bauen (Kumpel)
+
+# Baut den Kumpel in der Cloud und legt die vier Flash-Teile nach firmware-kumpel/.
+# Vorher laeuft der PC-Test (host/kumpel_sim.cpp): Figuren, Seiten, Gesten,
+# Aktionen an Home Assistant und die Einstellungen als JSON.
+# Danach ist die Installer-Seite (GitHub Pages aus main) automatisch aktuell.
+#
+# Startet bei jeder Aenderung am Kumpel-Quellcode oder per Hand:
+# Actions -> "Firmware bauen (Kumpel)" -> Run workflow.
+
+on:
+  push:
+    branches: [main]
+    paths: ['firmware-src/Kumpel/**', 'host/kumpel_sim.cpp', 'tools/make_manifest.py', '.github/workflows/kumpel.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: firmware-kumpel
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: arduino/setup-arduino-cli@v2
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.arduino15
+            ~/Arduino/libraries
+          key: arduino-${{ runner.os }}-esp32-3.3.11-gfx-1.6.7-sensor-0.4.1-xpowers-0.3.3-json-7.4.2
+      - name: ESP32-Core und Bibliotheken (gleiche Versionen wie TamaPoke, dazu ArduinoJson)
+        run: |
+          URL=https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index --additional-urls $URL
+          arduino-cli core install esp32:esp32@3.3.11 --additional-urls $URL
+          arduino-cli lib install "GFX Library for Arduino@1.6.7" "SensorLib@0.4.1" "XPowersLib@0.3.3" "ArduinoJson@7.4.2"
+
+      - name: PC-Test (Figuren, Seiten, Gesten, Einstellungen)
+        run: |
+          K=firmware-src/Kumpel
+          g++ -O2 -std=c++17 -I$K -I$HOME/Arduino/libraries/ArduinoJson/src host/kumpel_sim.cpp \
+            $K/kumpel.cpp $K/gfx.cpp $K/font_data.cpp $K/config_json.cpp -o kumpel_sim
+          mkdir -p kumpel-out && ./kumpel_sim kumpel-out
+
+      - name: Kompilieren
+        run: |
+          set -o pipefail
+          FQBN="esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashSize=16M,PSRAM=opi,PartitionScheme=app3M_fat9M_16MB"
+          if ! arduino-cli compile --fqbn "$FQBN" --export-binaries firmware-src/Kumpel 2>&1 | tee build.log; then
+            grep -E "error|Error" build.log | head -25 | while IFS= read -r l; do echo "::error::$l"; done
+            exit 1
+          fi
+
+      - name: Firmware und Manifest aktualisieren
+        run: |
+          B=firmware-src/Kumpel/build/esp32.esp32.esp32s3
+          mkdir -p firmware-kumpel
+          cp "$B/Kumpel.ino.bootloader.bin" firmware-kumpel/bootloader.bin
+          cp "$B/Kumpel.ino.partitions.bin" firmware-kumpel/partitions.bin
+          cp "$B/boot_app0.bin"             firmware-kumpel/boot_app0.bin
+          cp "$B/Kumpel.ino.bin"            firmware-kumpel/app.bin
+          # bricht ab, wenn die Partitionstabelle nicht mehr zu TamaPoke passt
+          python3 tools/make_manifest.py kumpel
+
+      - name: Einchecken
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add firmware-kumpel manifest-kumpel.json
+          if git diff --cached --quiet; then echo "nichts geaendert"; exit 0; fi
+          git commit -m "Kumpel gebaut ($(grep -o 'FW_VERSION "[0-9.]*"' firmware-src/Kumpel/Kumpel.ino | grep -o '[0-9.]*'))"
+          # der Mallorca-Build kann parallel eingecheckt haben
+          git pull --rebase origin main && git push

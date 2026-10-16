@@ -1,4 +1,4 @@
-name: Firmware bauen
+name: Firmware bauen (Mallorca-Deko)
 
 # Baut Kleine Welt in der Cloud und legt die vier Flash-Teile nach firmware/.
 # Vorher laeuft der PC-Test (host/sim.cpp), der den Raum per Touch durchspielt.
@@ -10,7 +10,7 @@ name: Firmware bauen
 on:
   push:
     branches: [main]
-    paths: ['firmware-src/**', 'host/**', 'tools/**', '.github/workflows/firmware.yml']
+    paths: ['firmware-src/KleineWelt/**', 'host/sim.cpp', '.github/workflows/firmware.yml']
   workflow_dispatch:
 
 permissions:
@@ -73,4 +73,5 @@ jobs:
           git add firmware manifest.json
           if git diff --cached --quiet; then echo "nichts geaendert"; exit 0; fi
           git commit -m "Firmware gebaut ($(grep -o 'FW_VERSION "[0-9.]*"' firmware-src/KleineWelt/KleineWelt.ino | grep -o '[0-9.]*'))"
-          git push
+          # der Kumpel-Build kann parallel eingecheckt haben
+          git pull --rebase origin main && git push
