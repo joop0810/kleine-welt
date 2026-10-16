@@ -271,8 +271,9 @@ static bool cold() {
   if (!cfg.coldEntity[0]) return false;
   Entity *e = findEntity(cfg.coldEntity);
   if (unavailable(e)) return false;
-  float v = e->cur;
-  if (isnan(v) && !numeric(e->state, v)) return false;
+  float v = e->cur;                                   // Thermostat: Ist-Temperatur
+  if (isnan(v) && !numeric(e->state, v)) v = e->target;  // Wetter: Aussentemperatur steckt in "temperature"
+  if (isnan(v)) return false;
   return v < cfg.coldBelow;
 }
 static bool hintActive(int i) {

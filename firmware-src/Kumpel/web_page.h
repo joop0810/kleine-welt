@@ -82,7 +82,7 @@ button:disabled{opacity:.5}
 </section>
 
 <section><h2>Reaktionen</h2>
-<label>Friert bei Kälte – Temperatur von</label><input id="cold" list="ents_temp" placeholder="z. B. sensor.wohnzimmer_temperatur (leer = aus)">
+<label>Friert bei Kälte – Temperatur von</label><input id="cold" list="ents_temp" placeholder="z. B. weather.forecast_home oder ein Temperatursensor (leer = aus)">
 <label>… unter (°C)</label><input id="coldb" type="number" step="0.5">
 <label style="margin-top:16px">Wetter (Sonnenbrille bei Sonne, Regenwolke bei Regen)</label><input id="weather" list="ents_weather" placeholder="z. B. weather.forecast_home (leer = aus)">
 <label>Schwitzt ab Außentemperatur (°C)</label><input id="hot" type="number" step="0.5">
@@ -141,7 +141,7 @@ function lists(){
   let html='';
   const mk=(id,f)=>{let o=ents.filter(f).map(e=>`<option value="${e.i}">${esc(e.n)}${e.u?' ('+esc(e.s)+' '+esc(e.u)+')':''}</option>`).join('');html+=`<datalist id="${id}">${o}</datalist>`};
   for(const t in DOM)mk('ents_'+t,e=>!DOM[t]||DOM[t].includes(e.i.split('.')[0]));
-  mk('ents_temp',e=>e.i.startsWith('climate.')||/°/.test(e.u||''));
+  mk('ents_temp',e=>e.i.startsWith('climate.')||e.i.startsWith('weather.')||/°/.test(e.u||''));
   mk('ents_weather',e=>e.i.startsWith('weather.'));
   mk('ents_all',()=>true);
   let d=$('dl');if(!d){d=document.createElement('div');d.id='dl';document.body.appendChild(d)}d.innerHTML=html;

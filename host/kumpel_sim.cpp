@@ -185,6 +185,12 @@ int main(int argc, char **argv) {
       check(debug().sad && !debug().shades && !debug().sweat, "Regen: bedrueckt");
       save(std::string("wetter") + std::to_string(sk) + "_regen");
       strcpy(wx.state, "cloudy");
+      {
+        Config cc = cw; strcpy(cc.coldEntity, "weather.home"); cc.coldBelow = 5; setConfig(cc);
+        wx.target = 2; run(0.3f);
+        check(debug().mood == M_COLD, "friert auch mit Wetter-Entity");
+        wx.target = 12; setConfig(cw); run(0.3f);
+      }
       testSetHours(22.7f); run(1.2f);
       check(debug().mood == M_TIRED && debug().lid > 0.3f, "kurz vor 23 Uhr muede");
       for (int k = 0; k < 600 && debug().yawn < 0.6f; k++) run(0.1f);   // warten, bis er gaehnt
