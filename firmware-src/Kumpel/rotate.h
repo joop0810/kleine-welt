@@ -44,4 +44,30 @@ inline void image(int q, int n, const uint16_t *src, uint16_t *dst) {
     }
 }
 
+// Aktuell angezeigte Lage (Viertelumdrehungen), fuer Touch und Einstellungsseite
+inline int &current() { static int q = 0; return q; }
+
+// Automatisch ausrichten ueber den Lagesensor (QMI8658), Werte in g.
+// Achsen wie in den Waveshare-Beispielen fuer dieses Board (Bild ungedreht, Touch XY gespiegelt):
+//   +x zeigt zur Bild-Oberkante, +y zur rechten Bildkante.
+// Steht das Geraet z. B. mit der rechten Bildkante nach oben (im Figuren-Staender: SD-Slot oben,
+// USB-C unten), wird das Bild 90 Grad im Uhrzeigersinn gedreht.
+// Liegt es flach (Schwerkraft fast nur in z), bleibt die letzte Lage. Eine neue Lage gilt erst,
+// wenn sie eindeutig ist und 0,6 s anhaelt - kein Flackern bei Schraeglage oder Antippen.
+struct Auto {
+  int q = 0;          // angezeigte Lage
+  int cand = -1;      // Kandidat
+  uint32_t since = 0;
+};
+inline int autoStep(Auto &s, float ax, float ay, uint32_t nowMs) {
+  float fx = ax < 0 ? -ax : ax, fy = ay < 0 ? -ay : ay;
+  int c = -1;
+  if (fx > 0.6f && fx > fy + 0.25f) c = ax > 0 ? 0 : 2;
+  else if (fy > 0.6f && fy > fx + 0.25f) c = ay > 0 ? 1 : 3;
+  if (c < 0 || c == s.q) { s.cand = -1; return s.q; }
+  if (c != s.cand) { s.cand = c; s.since = nowMs; return s.q; }
+  if (nowMs - s.since >= 600) { s.q = c; s.cand = -1; }
+  return s.q;
+}
+
 }  // namespace rot

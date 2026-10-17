@@ -42,6 +42,7 @@ struct Config {
   uint8_t brightDay, brightNight;
   uint8_t homeAfter;            // Sekunden ohne Beruehrung -> zurueck zum Kumpel
   uint8_t rotate;               // Bild drehen: Viertelumdrehungen im Uhrzeigersinn (0..3)
+  uint8_t autoRotate;           // 1 = Lage automatisch ueber den Lagesensor (rotate wird dann ignoriert)
 };
 void defaultConfig(Config &c);
 

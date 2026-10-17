@@ -112,6 +112,7 @@ void defaultConfig(Config &c) {
   c.brightNight = 25;
   c.homeAfter = 45;
   c.hotAbove = 28;
+  c.autoRotate = 1;
 }
 
 // ------------------------------------------------------------------ Entities
@@ -142,6 +143,7 @@ void setConfig(const Config &c) {
   if (cfg.nHints > MAX_HINTS) cfg.nHints = MAX_HINTS;
   if (cfg.homeAfter < 10) cfg.homeAfter = 10;
   cfg.rotate &= 3;
+  cfg.autoRotate = cfg.autoRotate ? 1 : 0;
   // Entity-Tabelle neu aufbauen, bekannte Zustaende behalten
   Entity old[sizeof ents / sizeof ents[0]];
   int nOld = nEnts;

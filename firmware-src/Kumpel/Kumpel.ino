@@ -27,7 +27,7 @@
 #include "web.h"
 #include "rotate.h"
 
-#define FW_VERSION "1.3.0"
+#define FW_VERSION "1.4.0"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
 Arduino_CO5300 *panel = new Arduino_CO5300(bus, LCD_RESET, 0, LCD_WIDTH, LCD_HEIGHT, 6, 0, 0, 0);
@@ -55,7 +55,7 @@ static void readTouch() {
   int n = touch.getPoint(xs, ys, 2);
   if (n > 2) n = 2;
   if (n < 0) n = 0;
-  int q = kb::config().rotate;   // Touch passend zum gedrehten Bild zurueckrechnen
+  int q = rot::current();   // Touch passend zum gedrehten Bild zurueckrechnen
   for (int i = 0; i < n; i++) {
     int cx, cy;
     rot::toContent(q, LCD_WIDTH, xs[i], ys[i], cx, cy);
@@ -84,14 +84,32 @@ static void syncClock() {
   kb::setClock(t.getHour(), t.getMinute(), t.getSecond(), valid);
 }
 
+// Lage: automatisch ueber den Lagesensor oder fest aus den Einstellungen
+static rot::Auto autoRot;
+static void updateRotation(bool haveAcc, float x, float y) {
+  const kb::Config &c = kb::config();
+  if (c.autoRotate && imuOk) {
+    if (haveAcc) {
+      // Tiefpass gegen Wackeln beim Antippen
+      static float fx = 0, fy = 0;
+      fx += (x - fx) * 0.2f; fy += (y - fy) * 0.2f;
+      rot::current() = rot::autoStep(autoRot, fx, fy, millis());
+    }
+  } else {
+    rot::current() = c.rotate & 3;
+  }
+}
+
 // Schuetteln: mehrere kraeftige Ausschlaege innerhalb einer Sekunde
 static void readImu() {
   static uint32_t last = 0, firstPeak = 0, quietUntil = 0;
   static int peaks = 0;
-  if (!imuOk || millis() - last < 20) return;
+  if (!imuOk) { updateRotation(false, 0, 0); return; }
+  if (millis() - last < 20) return;
   last = millis();
   float x, y, z;
-  if (!imu.getDataReady() || !imu.getAccelerometer(x, y, z)) return;
+  if (!imu.getDataReady() || !imu.getAccelerometer(x, y, z)) { updateRotation(false, 0, 0); return; }
+  updateRotation(true, x, y);
   float g = sqrtf(x * x + y * y + z * z);
   if (millis() < quietUntil) return;
   if (fabsf(g - 1.0f) > 0.9f) {
@@ -192,7 +210,7 @@ void loop() {
   lastFrame = now;
 
   kb::tick(now, fingers, nFingers);
-  int q = kb::config().rotate;
+  int q = rot::current();
   if (q && !fbRot) fbRot = (uint16_t *)ps_malloc(LCD_WIDTH * LCD_HEIGHT * 2);
   if (q && fbRot) {
     rot::image(q, LCD_WIDTH, fb, fbRot);

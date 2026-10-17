@@ -312,13 +312,19 @@ int main(int argc, char **argv) {
     const char *bad = "{\"pages\":[{\"type\":\"quatsch\",\"entity\":\"x.y\"},{\"type\":\"light\",\"entity\":\"\"}],\"skin\":\"pebble\"}";
     check(configFromJson(bad, strlen(bad), r) && r.nPages == 0 && r.skin == SK_PEBBLE, "JSON: unbrauchbare Seiten werden verworfen");
     check(!configFromJson("{kaputt", 7, r), "JSON: kaputte Daten abgelehnt");
-    Config d = c; d.rotate = 1;
+    Config d = c; d.rotate = 1; d.autoRotate = 0;
     n = configToJson(d, js, sizeof js);
     check(n > 0 && strstr(js, "\"rotate\":90") && configFromJson(js, n, r) && r.rotate == 1, "JSON: Bild drehen bleibt erhalten");
     const char *r270 = "{\"rotate\":270}", *rbad = "{\"rotate\":999}";
     check(configFromJson(r270, strlen(r270), r) && r.rotate == 3, "JSON: 270 Grad");
     check(configFromJson(rbad, strlen(rbad), r) && r.rotate == 3, "JSON: zu grosser Winkel wird begrenzt");
-    check(configFromJson("{}", 2, r) && r.rotate == 0, "JSON: ohne Angabe nicht drehen");
+    check(configFromJson("{}", 2, r) && r.autoRotate == 1, "JSON: ohne Angabe automatisch (Lagesensor)");
+    const char *rauto = "{\"rotate\":\"auto\"}", *r0 = "{\"rotate\":0}";
+    check(configFromJson(rauto, strlen(rauto), r) && r.autoRotate == 1, "JSON: \"auto\" gelesen");
+    check(configFromJson(r0, strlen(r0), r) && r.autoRotate == 0 && r.rotate == 0, "JSON: 0 Grad = fest, nicht automatisch");
+    d.autoRotate = 1;
+    n = configToJson(d, js, sizeof js);
+    check(n > 0 && strstr(js, "\"rotate\":\"auto\""), "JSON: automatisch wird gespeichert");
   }
 
   // --- Bild drehen: Pixel und Touch muessen zusammenpassen
@@ -341,6 +347,18 @@ int main(int argc, char **argv) {
     rot::image(1, SCR, a, b);   // 90 Grad: oben links landet oben rechts
     check(b[SCR - 1] == a[0] && touchOk, "Drehen: Touch trifft den angezeigten Pixel (alle vier Lagen)");
     check(fourOk, "Drehen: viermal 90 Grad = unveraendert");
+
+    // Lagesensor: +x = Bild-Oberkante, +y = rechte Bildkante (Werte in g)
+    rot::Auto s;
+    uint32_t t0 = 0;
+    auto feed = [&](float ax, float ay, int ms) { int q = 0; for (int k = 0; k <= ms; k += 20) q = rot::autoStep(s, ax, ay, t0 += 20); return q; };
+    check(feed(0.98f, 0.0f, 1000) == 0, "Lage: aufrecht = nicht drehen");
+    check(feed(0.05f, 0.97f, 300) == 0, "Lage: kurz gekippt aendert noch nichts");
+    check(feed(0.05f, 0.97f, 700) == 1, "Lage: Staender (SD oben, USB-C unten) = 90 Grad im Uhrzeigersinn");
+    check(feed(0.0f, 0.1f, 2000) == 1, "Lage: flach hingelegt behaelt die letzte Lage");
+    check(feed(0.62f, 0.58f, 2000) == 1, "Lage: schraeg (45 Grad) wechselt nicht hin und her");
+    check(feed(-0.95f, 0.1f, 1000) == 2, "Lage: auf dem Kopf = 180 Grad");
+    check(feed(0.0f, -0.96f, 1000) == 3, "Lage: andersherum = 90 Grad gegen den Uhrzeigersinn");
   }
 
   // --- Einrichtungsbildschirm

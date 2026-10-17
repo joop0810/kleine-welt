@@ -100,12 +100,13 @@ button:disabled{opacity:.5}
 <div><label>Helligkeit nachts <span id="bnv"></span></label><input id="bn" type="range" min="0" max="160"></div></div>
 <label>Zurück zum Kumpel nach (Sekunden)</label><input id="home" type="number" min="10" max="250">
 <label>Bild drehen</label><select id="rot">
+<option value="auto">automatisch (Lagesensor)</option>
 <option value="0">nicht drehen</option>
 <option value="90">90° im Uhrzeigersinn</option>
 <option value="180">180° (auf dem Kopf)</option>
 <option value="270">90° gegen den Uhrzeigersinn</option>
 </select>
-<p class="hint">Je nachdem, wie das Gerät steht – z. B. im Figuren-Ständer mit USB-C nach unten. Touch und Wischen drehen mit.</p>
+<p class="hint">„Automatisch“ dreht das Bild so, wie das Gerät gerade steht – z. B. im Figuren-Ständer mit USB-C nach unten. Liegt es flach, bleibt die letzte Lage. Touch und Wischen drehen mit. <span id="rotnow"></span></p>
 <label>Zeitzone</label><select id="tz">
 <option value="CET-1CEST,M3.5.0,M10.5.0/3">Deutschland, Österreich, Schweiz …</option>
 <option value="GMT0BST,M3.5.0/1,M10.5.0">Großbritannien, Irland</option>
@@ -193,7 +194,7 @@ function fill(){
   $('cold').value=cfg.cold.entity||'';$('coldb').value=cfg.cold.below;
   const wt=cfg.weather||{};$('weather').value=wt.entity||'';$('hot').value=wt.hot??28;
   $('sleepon').checked=cfg.sleep.on;$('sfrom').value=cfg.sleep.from;$('sto').value=cfg.sleep.to;
-  $('bd').value=cfg.bright.day;$('bn').value=cfg.bright.night;$('home').value=cfg.homeAfter;$('rot').value=String(cfg.rotate||0);
+  $('bd').value=cfg.bright.day;$('bn').value=cfg.bright.night;$('home').value=cfg.homeAfter;$('rot').value=String(cfg.rotate??'auto');
   $('bdv').textContent=cfg.bright.day;$('bnv').textContent=cfg.bright.night;
 }
 function collect(){
@@ -202,7 +203,7 @@ function collect(){
   cfg.sleep={on:$('sleepon').checked,from:$('sfrom').value||'23:00',to:$('sto').value||'07:00'};
   cfg.bright={day:+$('bd').value,night:+$('bn').value};
   cfg.homeAfter=+$('home').value||45;
-  cfg.rotate=+$('rot').value||0;
+  cfg.rotate=$('rot').value==='auto'?'auto':+$('rot').value;
   cfg.pages=cfg.pages.filter(p=>p.entity);
   cfg.hints=cfg.hints.filter(h=>h.entity&&h.text);
 }
@@ -217,6 +218,7 @@ function status(){
     if(!$('haurl').value)$('haurl').value=s.ha.url||'';
     $('hatok').placeholder=s.ha.token?'gespeichert – leer lassen zum Behalten':'Profil → Sicherheit → Token erstellen';
     $('tz').value=s.tz;
+    if(s.rot!==undefined)$('rotnow').textContent=`Gerade angezeigt: ${s.rot}°.`;
   }).catch(()=>{});
 }
 function loadEnts(){

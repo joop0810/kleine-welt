@@ -1,4 +1,5 @@
 #include "web.h"
+#include "rotate.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
@@ -49,6 +50,7 @@ static void hStatus() {
   h["drops"] = ha::dropCount();
   d["uptime"] = millis() / 1000;
   d["tz"] = net::settings().tz;
+  d["rot"] = rot::current() * 90;   // aktuell angezeigte Lage (bei "automatisch" vom Lagesensor)
   sendJson(d);
 }
 

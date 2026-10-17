@@ -61,7 +61,15 @@ bool configFromJson(const char *json, size_t len, Config &c) {
   c.brightDay = clampInt(doc["bright"]["day"], 10, 255, c.brightDay);
   c.brightNight = clampInt(doc["bright"]["night"], 0, 255, c.brightNight);
   c.homeAfter = clampInt(doc["homeAfter"], 10, 250, c.homeAfter);
-  c.rotate = (clampInt(doc["rotate"], 0, 270, 0) / 90) & 3;   // Grad: 0, 90, 180, 270
+  // "rotate": "auto" (Lagesensor) oder Grad 0/90/180/270; fehlt es, gilt der Standard (auto)
+  JsonVariantConst rv = doc["rotate"];
+  if (rv.is<const char *>()) {
+    c.autoRotate = !strcmp(rv.as<const char *>(), "auto");
+    c.rotate = 0;
+  } else if (rv.is<int>()) {
+    c.autoRotate = 0;
+    c.rotate = (clampInt(rv, 0, 270, 0) / 90) & 3;
+  }
   return true;
 }
 
@@ -97,7 +105,8 @@ size_t configToJson(const Config &c, char *out, size_t outLen) {
   doc["bright"]["day"] = c.brightDay;
   doc["bright"]["night"] = c.brightNight;
   doc["homeAfter"] = c.homeAfter;
-  doc["rotate"] = (c.rotate & 3) * 90;
+  if (c.autoRotate) doc["rotate"] = "auto";
+  else doc["rotate"] = (c.rotate & 3) * 90;
   size_t need = measureJson(doc);
   if (need + 1 > outLen) return 0;
   return serializeJson(doc, out, outLen);
