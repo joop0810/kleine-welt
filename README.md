@@ -58,7 +58,9 @@ Heizung/Klima, Licht (Helligkeit + Farben), Schalter, Anzeige, Szene/Skript/Tast
 
 Einrichtung: WLAN direkt im Web-Installer (Improv) oder über das Einrichtungs-WLAN
 `Kumpel-Setup`; danach `http://kumpel.local` → Home-Assistant-Adresse + langlebiges Token,
-Seiten und Reaktionen per Auswahlliste. Gespeichert wird nur im NVS-Namensraum `kumpel`.
+Seiten und Reaktionen per Auswahlliste.
+Unter *Anzeige → Bild drehen* lässt sich das Bild um 90/180/270° drehen, z. B. für den
+Figuren-Ständer, in dem USB-C nach unten zeigt; Touch und Wischen drehen mit. Gespeichert wird nur im NVS-Namensraum `kumpel`.
 
 | Pfad | Inhalt |
 |---|---|

@@ -41,6 +41,7 @@ struct Config {
   float hotAbove;               // ab dieser Aussentemperatur schwitzt er
   uint8_t brightDay, brightNight;
   uint8_t homeAfter;            // Sekunden ohne Beruehrung -> zurueck zum Kumpel
+  uint8_t rotate;               // Bild drehen: Viertelumdrehungen im Uhrzeigersinn (0..3)
 };
 void defaultConfig(Config &c);
 

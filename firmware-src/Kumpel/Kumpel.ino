@@ -25,8 +25,9 @@
 #include "net.h"
 #include "ha.h"
 #include "web.h"
+#include "rotate.h"
 
-#define FW_VERSION "1.2.1"
+#define FW_VERSION "1.3.0"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
 Arduino_CO5300 *panel = new Arduino_CO5300(bus, LCD_RESET, 0, LCD_WIDTH, LCD_HEIGHT, 6, 0, 0, 0);
@@ -36,6 +37,7 @@ SensorPCF85063 rtc;
 SensorQMI8658 imu;
 static bool rtcOk = false, imuOk = false;
 static uint16_t *fb = nullptr;
+static uint16_t *fbRot = nullptr;   // gedrehtes Bild, nur wenn "Bild drehen" an ist
 
 // Touch wie bei Kleine Welt: nur lesen, wenn der Chip per INT etwas meldet
 static volatile bool touchIrq = false;
@@ -53,7 +55,12 @@ static void readTouch() {
   int n = touch.getPoint(xs, ys, 2);
   if (n > 2) n = 2;
   if (n < 0) n = 0;
-  for (int i = 0; i < n; i++) { fingers[i].x = xs[i]; fingers[i].y = ys[i]; }
+  int q = kb::config().rotate;   // Touch passend zum gedrehten Bild zurueckrechnen
+  for (int i = 0; i < n; i++) {
+    int cx, cy;
+    rot::toContent(q, LCD_WIDTH, xs[i], ys[i], cx, cy);
+    fingers[i].x = cx; fingers[i].y = cy;
+  }
   nFingers = n;
 }
 
@@ -185,7 +192,14 @@ void loop() {
   lastFrame = now;
 
   kb::tick(now, fingers, nFingers);
-  panel->draw16bitRGBBitmap(0, 0, fb, LCD_WIDTH, LCD_HEIGHT);
+  int q = kb::config().rotate;
+  if (q && !fbRot) fbRot = (uint16_t *)ps_malloc(LCD_WIDTH * LCD_HEIGHT * 2);
+  if (q && fbRot) {
+    rot::image(q, LCD_WIDTH, fb, fbRot);
+    panel->draw16bitRGBBitmap(0, 0, fbRot, LCD_WIDTH, LCD_HEIGHT);
+  } else {
+    panel->draw16bitRGBBitmap(0, 0, fb, LCD_WIDTH, LCD_HEIGHT);
+  }
 
   kb::Action a;
   while (kb::takeAction(a)) ha::call(a);

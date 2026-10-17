@@ -6,6 +6,7 @@
 //   ./kumpel_sim out
 #include "kumpel.h"
 #include "config_json.h"
+#include "rotate.h"
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -311,6 +312,35 @@ int main(int argc, char **argv) {
     const char *bad = "{\"pages\":[{\"type\":\"quatsch\",\"entity\":\"x.y\"},{\"type\":\"light\",\"entity\":\"\"}],\"skin\":\"pebble\"}";
     check(configFromJson(bad, strlen(bad), r) && r.nPages == 0 && r.skin == SK_PEBBLE, "JSON: unbrauchbare Seiten werden verworfen");
     check(!configFromJson("{kaputt", 7, r), "JSON: kaputte Daten abgelehnt");
+    Config d = c; d.rotate = 1;
+    n = configToJson(d, js, sizeof js);
+    check(n > 0 && strstr(js, "\"rotate\":90") && configFromJson(js, n, r) && r.rotate == 1, "JSON: Bild drehen bleibt erhalten");
+    const char *r270 = "{\"rotate\":270}", *rbad = "{\"rotate\":999}";
+    check(configFromJson(r270, strlen(r270), r) && r.rotate == 3, "JSON: 270 Grad");
+    check(configFromJson(rbad, strlen(rbad), r) && r.rotate == 3, "JSON: zu grosser Winkel wird begrenzt");
+    check(configFromJson("{}", 2, r) && r.rotate == 0, "JSON: ohne Angabe nicht drehen");
+  }
+
+  // --- Bild drehen: Pixel und Touch muessen zusammenpassen
+  {
+    static uint16_t a[SCR * SCR], b[SCR * SCR], t[SCR * SCR];
+    for (int i = 0; i < SCR * SCR; i++) a[i] = (uint16_t)(i * 2654435761u >> 16);
+    bool touchOk = true, fourOk = true;
+    for (int q = 0; q < 4; q++) {
+      rot::image(q, SCR, a, b);
+      // Touch auf einen Panelpunkt muss genau den Inhaltspixel treffen, der dort angezeigt wird
+      for (int k = 0; k < 2000; k++) {
+        int px = (k * 37) % SCR, py = (k * 101) % SCR, cx, cy;
+        rot::toContent(q, SCR, px, py, cx, cy);
+        if (b[py * SCR + px] != a[cy * SCR + cx]) touchOk = false;
+      }
+    }
+    memcpy(t, a, sizeof a);
+    for (int k = 0; k < 4; k++) { rot::image(1, SCR, t, b); memcpy(t, b, sizeof b); }
+    fourOk = !memcmp(t, a, sizeof a);
+    rot::image(1, SCR, a, b);   // 90 Grad: oben links landet oben rechts
+    check(b[SCR - 1] == a[0] && touchOk, "Drehen: Touch trifft den angezeigten Pixel (alle vier Lagen)");
+    check(fourOk, "Drehen: viermal 90 Grad = unveraendert");
   }
 
   // --- Einrichtungsbildschirm
