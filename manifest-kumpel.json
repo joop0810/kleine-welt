@@ -1,6 +1,6 @@
 {
-  "name": "Kumpel 1.2.1",
-  "version": "1.2.1",
+  "name": "Kumpel 1.3.0",
+  "version": "1.3.0",
   "new_install_prompt_erase": true,
   "new_install_improv_wait_time": 20,
   "builds": [
@@ -20,7 +20,7 @@
           "offset": 57344
         },
         {
-          "path": "firmware-kumpel/app.bin?v=536ba71b028fb8c6",
+          "path": "firmware-kumpel/app.bin?v=3176685886e46ea6",
           "offset": 65536
         }
       ]
