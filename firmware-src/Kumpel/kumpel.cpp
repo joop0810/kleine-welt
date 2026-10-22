@@ -552,9 +552,10 @@ static void skinSoft(float cx, float cy, float s, const Look &L) {
   uint16_t body = cold ? C(0xd6e6f5) : C(0xe4f1ec);
   uint16_t glow = cold ? C(0x5a8fd0) : C(0x2fa58a);
   // weicher Schein dahinter und Schatten darunter
-  for (int k = 8; k >= 1; k--) {   // viele flache Stufen = weicher Uebergang
-    gAlpha(0.022f);
-    gRRect(x0 - k * 6 * s, y0 - k * 6 * s, W + k * 12 * s, H + k * 12 * s, R + k * 6 * s, glow);
+  // Schein: jede Stufe nur als schmaler Ring (innen liegt die naechste Stufe bzw. der Koerper)
+  for (int k = 6; k >= 1; k--) {
+    gAlpha(0.03f * (7 - k));
+    gRRectHole(x0 - k * 7 * s, y0 - k * 7 * s, W + k * 14 * s, H + k * 14 * s, R + k * 7 * s, 7 * s, glow);
   }
   gAlpha(0.35f);
   gEllipse(cx, bottom + 14 * s, W * 0.36f, 7 * s, C(0x0e2a24));
@@ -1169,6 +1170,13 @@ void begin(uint16_t *fb, uint32_t seed) {
   defaultConfig(c);
   setConfig(c);
   info[0][0] = info[1][0] = info[2][0] = 0;
+}
+
+// Beruehrungen sofort auswerten, unabhaengig vom Bildaufbau (sonst gehen bei
+// langsamen Bildern Teile einer Wischbewegung verloren)
+void feedTouch(uint32_t nowMs, const Touch *pts, int n) {
+  now = nowMs;
+  input(pts, n);
 }
 
 void tick(uint32_t nowMs, const Touch *pts, int n) {

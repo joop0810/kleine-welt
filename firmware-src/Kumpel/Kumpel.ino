@@ -27,7 +27,7 @@
 #include "web.h"
 #include "rotate.h"
 
-#define FW_VERSION "1.5.1"
+#define FW_VERSION "1.5.2"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
 Arduino_CO5300 *panel = new Arduino_CO5300(bus, LCD_RESET, 0, LCD_WIDTH, LCD_HEIGHT, 6, 0, 0, 0);
@@ -62,6 +62,7 @@ static void readTouch() {
     fingers[i].x = cx; fingers[i].y = cy;
   }
   nFingers = n;
+  kb::feedTouch(millis(), fingers, nFingers);   // sofort auswerten, nicht erst beim naechsten Bild
 }
 
 // Uhr: Internetzeit bevorzugt, sonst RTC. Internetzeit wird stuendlich in die RTC geschrieben.

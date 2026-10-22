@@ -87,6 +87,8 @@ void setClock(int hour, int minute, int second, bool valid);
 void shake();   // Lagesensor meldet Schuetteln
 
 void tick(uint32_t nowMs, const Touch *pts, int n);
+// Fingerpunkte zwischen den Bildern einspeisen (jede Touch-Abfrage, nicht nur pro Bild)
+void feedTouch(uint32_t nowMs, const Touch *pts, int n);
 
 bool takeAction(Action &a);
 bool takeSkinChange(uint8_t &skin);   // am Geraet umgeschaltet -> speichern

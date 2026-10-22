@@ -262,6 +262,22 @@ int main(int argc, char **argv) {
   run(0.5f);
   check(debug().page == 5, "zurueckwischen");
 
+  // Wischen bei langsamen Bildern: Touch wird alle 15 ms eingespeist, Bild nur alle 300 ms
+  {
+    while (debug().page != 0) swipeRight();
+    run(1);
+    int before = debug().page;
+    for (int k = 0; k <= 12; k++) {
+      Touch t{(int16_t)(340 - 19 * k), 236};
+      now += 15; feedTouch(now, &t, 1);
+      if (k == 6) tick(now, &t, 1);   // nur ein Bild mitten in der Bewegung
+    }
+    now += 15; feedTouch(now, nullptr, 0);
+    now += 300; tick(now, nullptr, 0);
+    run(0.5f);
+    check(debug().page == before + 1, "Wischen auch bei langsamem Bildaufbau");
+  }
+
   Action acts[16];
   // --- Sauger: Start
   while (debug().page != 6) swipeLeft();

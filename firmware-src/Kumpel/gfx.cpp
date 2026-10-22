@@ -149,14 +149,71 @@ void gCapsule(float x0, float y0, float x1, float y1, float r, uint16_t c) {
   });
 }
 
-void gRRect(float x, float y, float w, float h, float rad, uint16_t c) {
+void gRRect(float x, float y, float w, float h, float rad, uint16_t c) { gRRectHole(x, y, w, h, rad, 0, c); }
+
+void gRRectHole(float x, float y, float w, float h, float rad, float hole, uint16_t c) {
+  if (w <= 0 || h <= 0) return;
+  if (rad > w * 0.5f) rad = w * 0.5f;
+  if (rad > h * 0.5f) rad = h * 0.5f;
   float cx = x + w * 0.5f, cy = y + h * 0.5f, hx = w * 0.5f - rad, hy = h * 0.5f - rad;
-  paint(x, y, x + w, y + h, c, [&](float px, float py) {
+  auto sdf = [&](float px, float py) {
     float qx = fabsf(px - cx) - hx, qy = fabsf(py - cy) - hy;
     float mx = qx > 0 ? qx : 0, my = qy > 0 ? qy : 0;
     float inside = qx > qy ? qx : qy;
     return sqrtf(mx * mx + my * my) + (inside < 0 ? inside : 0) - rad;
-  });
+  };
+  // halbe Breite der Form in Zeile py (exakt), < 0 = Zeile ausserhalb
+  auto halfW = [&](float py) {
+    float dy = fabsf(py - cy) - hy;
+    if (dy <= 0) return hx + rad;
+    if (dy >= rad) return -1.0f;
+    return hx + sqrtf(rad * rad - dy * dy);
+  };
+  // Zeilenweise: Inneres direkt fuellen, nur die Raender (1-2 Pixel) mit Kantenglaettung
+  int y0 = (int)floorf(y - 1) + oy, y1 = (int)ceilf(y + h + 1) + oy;
+  if (y0 < 0) y0 = 0;
+  if (y1 > SCR - 1) y1 = SCR - 1;
+  for (int yy = y0; yy <= y1; yy++) {
+    float py = yy - oy + 0.5f;
+    float e = halfW(py);
+    float eIn = fminf(halfW(py - 1.5f), halfW(py + 1.5f)) - 1.0f;   // sicher innen
+    float eOut = (e < 0 ? fmaxf(halfW(py - 1), halfW(py + 1)) : e) + 1.0f;
+    if (eOut <= 0 && e < 0) {
+      float m = fmaxf(halfW(py - 1.0f), halfW(py + 1.0f));
+      if (m < 0) continue;
+      eOut = m + 1.0f;
+    }
+    int xa = (int)floorf(cx - eOut) + ox, xb = (int)ceilf(cx + eOut) + ox;
+    if (xa < 0) xa = 0;
+    if (xb > SCR - 1) xb = SCR - 1;
+    int ia = eIn > 0 ? (int)ceilf(cx - eIn) + ox : xb + 1, ib = eIn > 0 ? (int)floorf(cx + eIn) + ox : xa - 1;
+    // Loch (gleiche Form, um "hole" eingerueckt): wird spaeter ohnehin uebermalt -> auslassen
+    int ha = 1, hb = 0;
+    if (hole > 0 && rad > hole) {
+      float r2 = rad - hole, dy = fabsf(py - cy) - hy, eh;
+      if (dy <= 0) eh = hx + r2;
+      else eh = dy < r2 ? hx + sqrtf(r2 * r2 - dy * dy) : -1.0f;
+      if (eh > 1 && fabsf(py - cy) < hy + r2 - 1) { ha = (int)ceilf(cx - eh + 1) + ox; hb = (int)floorf(cx + eh - 1) + ox; }
+    }
+    for (int xx = xa; xx <= xb; xx++) {
+      if (xx >= ha && xx <= hb) { xx = hb; continue; }
+      if (xx >= ia && xx <= ib) {   // Inneres: ohne Abstandsrechnung
+        int end = ib;
+        if (ha <= hb && xx < ha && ib >= ha) end = ha - 1;
+        if (galpha >= 256) {
+          uint16_t *p = fb + yy * SCR;
+          for (int k = xx; k <= end; k++) p[k] = c;
+        } else {
+          for (int k = xx; k <= end; k++) blend(k, yy, c, 256);
+        }
+        xx = end;
+        continue;
+      }
+      float d = sdf(xx - ox + 0.5f, py);
+      if (d >= 0.5f) continue;
+      blend(xx, yy, c, d <= -0.5f ? 256 : (int)((0.5f - d) * 256));
+    }
+  }
 }
 
 void gEllipse(float cx, float cy, float rx, float ry, uint16_t c) {
