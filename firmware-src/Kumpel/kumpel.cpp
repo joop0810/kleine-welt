@@ -540,23 +540,24 @@ static void sparkle(float x, float y, float r, uint16_t c) {   // vierzackiger G
 static bool heartsNow() { return now < heartsUntil && now < happyUntil; }
 
 static void skinSoft(float cx, float cy, float s, const Look &L) {
+  s *= 1.32f;   // Marshmallow darf das Display gut ausfuellen
   int mood = L.mood;
   bool cold = mood == M_COLD;
   // atmen = leicht breiter/flacher und wieder zurueck (wie ein weiches Kissen)
   float br = sinf(now / (mood == M_SLEEPY ? 1500.0f : 1050.0f)) * (mood == M_SLEEPY ? 0.04f : 0.022f);
   if (cold) cx += sinf(now / 25.0f) * 2 * s;
   float W = 176 * s * (1 + br), H = 132 * s * (1 - br), R = 58 * s;
-  float bottom = cy + 70 * s;
+  float bottom = cy + 58 * s;
   float x0 = cx - W / 2, y0 = bottom - H;
   uint16_t body = cold ? C(0xd6e6f5) : C(0xe4f1ec);
   uint16_t glow = cold ? C(0x5a8fd0) : C(0x2fa58a);
   // weicher Schein dahinter und Schatten darunter
   for (int k = 8; k >= 1; k--) {   // viele flache Stufen = weicher Uebergang
-    gAlpha(0.05f);
+    gAlpha(0.022f);
     gRRect(x0 - k * 6 * s, y0 - k * 6 * s, W + k * 12 * s, H + k * 12 * s, R + k * 6 * s, glow);
   }
   gAlpha(0.35f);
-  gEllipse(cx, bottom + 30 * s, W * 0.36f, 9 * s, C(0x0e2a24));
+  gEllipse(cx, bottom + 14 * s, W * 0.36f, 7 * s, C(0x0e2a24));
   gAlpha(1);
   // Koerper mit sanfter Schattierung: dunklerer Rand, heller Kern, Glanz oben links
   gRRect(x0, y0, W, H, R, mix565(body, 0, 0.22f));
@@ -957,7 +958,7 @@ static void pageHome(int mood) {
   if (said[0]) drawBubble(said);
   look.talk = said[0] && now - talkStart < 1600 ? fabsf(sinf((now - talkStart) / 1000.0f * 11)) : 0;
   if (!said[0] && look.sad && calm(mood)) {
-    rainCloud(CX + 70 + dx, 118 + dy);
+    rainCloud(CX + 78 + dx, (cfg.skin == SK_SOFT ? 82 : 112) + dy);
   }
   drawSkin(CX + dx, (said[0] ? 252 : 240) + dy, 1.15f, mood);
   look.talk = 0;
