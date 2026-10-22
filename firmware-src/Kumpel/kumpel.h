@@ -43,6 +43,7 @@ struct Config {
   uint8_t homeAfter;            // Sekunden ohne Beruehrung -> zurueck zum Kumpel
   uint8_t rotate;               // Bild drehen: Viertelumdrehungen im Uhrzeigersinn (0..3)
   uint8_t autoRotate;           // 1 = Lage automatisch ueber den Lagesensor (rotate wird dann ignoriert)
+  uint8_t nightOff;             // 1 = in der Schlafenszeit Display ganz aus (Antippen weckt)
 };
 void defaultConfig(Config &c);
 
@@ -106,6 +107,9 @@ struct Debug {
   float lid, yawn;
   const char *greet; // aktuelle Begruessung ("" = keine)
   bool hearts;       // Herzaugen (zweimal schnell antippen)
+  float dots;        // Sichtbarkeit der Seiten-Punkte 0..1
+  int shiftX, shiftY;// aktuelle Bildverschiebung gegen Einbrennen
+  int bubbleLines;   // Zeilen der Sprechblase (0 = keine)
 };
 Debug debug();
 void hintText(int i, char *out, int n);   // Text der Sprechblase, {} = Wert der Entity

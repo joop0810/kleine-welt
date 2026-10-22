@@ -49,6 +49,7 @@ bool configFromJson(const char *json, size_t len, Config &c) {
   } else {
     c.sleepFrom = c.sleepTo = -1;
   }
+  c.nightOff = doc["sleep"]["off"] | true;
   for (JsonObjectConst h : doc["hints"].as<JsonArrayConst>()) {
     if (c.nHints >= MAX_HINTS) break;
     HintCfg &hc = c.hints[c.nHints];
@@ -94,6 +95,7 @@ size_t configToJson(const Config &c, char *out, size_t outLen) {
   doc["sleep"]["from"] = t;
   snprintf(t, sizeof t, "%02d:%02d", on ? c.sleepTo / 60 : 7, on ? c.sleepTo % 60 : 0);
   doc["sleep"]["to"] = t;
+  doc["sleep"]["off"] = (bool)c.nightOff;
   JsonArray hints = doc["hints"].to<JsonArray>();
   for (int i = 0; i < c.nHints; i++) {
     JsonObject h = hints.add<JsonObject>();

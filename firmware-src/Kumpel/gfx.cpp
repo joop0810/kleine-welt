@@ -262,6 +262,39 @@ void gTriangle(float x0, float y0, float x1, float y1, float x2, float y2, uint1
   });
 }
 
+// Hintergrund: innen schwarz (bis r0), zum Rand hin sanft in die Farbe col uebergehend (bei r1 voll).
+// Ersetzt gClear - jedes Pixel wird genau einmal geschrieben, ohne Wurzel (Nachschlagetabelle).
+void gRimBg(uint16_t col, float r0, float r1) {
+  if (col == 0) { gClear(0); return; }
+  constexpr int N = 64;
+  uint16_t pal[N + 1];
+  for (int i = 0; i <= N; i++) {
+    float t = (float)i / N;                // 0 bei r0 .. 1 bei r1 (in d^2)
+    t = t * t * (3 - 2 * t);               // weich
+    pal[i] = mix565(0, col, t);
+  }
+  const float c = SCR * 0.5f, q0 = r0 * r0, q1 = r1 * r1, k = N / (q1 - q0);
+  for (int y = 0; y < SCR; y++) {
+    uint16_t *row = fb + y * SCR;
+    float dy = y + 0.5f - c, dy2 = dy * dy;
+    // schwarzer Innenbereich dieser Zeile am Stueck
+    int xa = SCR, xb = -1;
+    if (dy2 < q0) {
+      float h = sqrtf(q0 - dy2);
+      xa = (int)ceilf(c - h); xb = (int)floorf(c + h) - 1;
+      if (xa < 0) xa = 0;
+      if (xb > SCR - 1) xb = SCR - 1;
+      if (xb >= xa) memset(row + xa, 0, (xb - xa + 1) * 2);
+    }
+    for (int x = 0; x < SCR; x++) {
+      if (x == xa && xb >= xa) { x = xb; continue; }
+      float dx = x + 0.5f - c, q = dx * dx + dy2;
+      int i = q <= q0 ? 0 : (int)((q - q0) * k);
+      row[x] = pal[i > N ? N : i];
+    }
+  }
+}
+
 // ------------------------------------------------------------------ Schrift
 static uint32_t nextCp(const char *&s) {
   uint8_t c = (uint8_t)*s++;

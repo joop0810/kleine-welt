@@ -242,6 +242,50 @@ int main(int argc, char **argv) {
     setConfig(c);
   }
 
+  // --- Einbrennschutz und Lesbarkeit
+  {
+    setConfig(c);
+    testSetHours(14.5f);
+    now += 30000; run(0.5f);
+    check(debug().dots == 0, "Seiten-Punkte ohne Beruehrung ausgeblendet");
+    tap(233, 240); run(0.3f);
+    check(debug().dots > 0.9f, "Seiten-Punkte nach Antippen sichtbar");
+    run(5);
+    check(debug().dots == 0, "und nach ein paar Sekunden wieder weg");
+    int sx0 = debug().shiftX, sy0 = debug().shiftY;
+    now += 120000; run(0.1f);
+    check(sx0 != debug().shiftX || sy0 != debug().shiftY, "Bild verschiebt sich langsam (Pixel-Shift)");
+    check(abs(debug().shiftX) <= 6 && abs(debug().shiftY) <= 6, "Verschiebung hoechstens 6 Pixel");
+    // nachts Display aus, Antippen weckt (gedimmt)
+    now += 30000; testSetHours(1.5f); run(7);   // "Gute Nacht!" laeuft 6 s
+    check(wantBrightness() == 0, "nachts Display aus");
+    tap(233, 240); run(0.3f);
+    check(wantBrightness() == c.brightNight, "Antippen weckt ihn gedimmt");
+    Config cn = c; cn.nightOff = 0; setConfig(cn);
+    now += 30000; run(1);
+    check(wantBrightness() == c.brightNight, "ohne Option nachts nur gedimmt");
+    save("hg_schlaeft");
+    setConfig(c);
+    testSetHours(14.5f); now += 30000; run(2);
+    save("hg_neutral");
+    // lange Hinweise zweizeilig
+    Config cb = c; cb.nHints = 1;
+    cb.hints[0] = {"sensor.abfall_morgen", C_NE, "nichts", "Morgen: {}"};
+    setConfig(cb);
+    ent("sensor.abfall_morgen").known = true;   // war zwischendurch nicht abonniert
+    strcpy(ent("sensor.abfall_morgen").state, "Papier, Restm\xC3\xBCll, Gelber Sack");
+    run(1);
+    check(debug().bubbleLines == 2, "langer Hinweis wird zweizeilig");
+    save("hinweis_lang");
+    for (int sk = 1; sk < SKINS; sk++) { cb.skin = sk; setConfig(cb); run(0.5f); save(std::string("hinweis_lang") + std::to_string(sk)); }
+    strcpy(ent("sensor.abfall_morgen").state, "Papier"); run(0.5f);
+    check(debug().bubbleLines == 1, "kurzer Hinweis einzeilig");
+    strcpy(ent("sensor.abfall_morgen").state, "keine");
+    setConfig(c);
+    tap(233, 240); run(0.5f);
+    save("hg_freut");
+  }
+
   // --- lange druecken = naechste Figur
   hold(233, 240, 1.0f);
   uint8_t sk;

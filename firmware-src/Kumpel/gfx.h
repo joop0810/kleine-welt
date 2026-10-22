@@ -18,6 +18,8 @@ enum Align : uint8_t { LEFT, CENTER, RIGHT };
 
 void gBegin(uint16_t *fb);
 void gClear(uint16_t c);
+// Hintergrund mit Rand-Leuchten: innen schwarz bis r0, zum Rand (r1) hin Farbe col
+void gRimBg(uint16_t col, float r0, float r1);
 void gOffset(int dx, int dy);   // verschiebt alles Folgende (Seitenwechsel)
 void gAlpha(float a);           // globale Deckkraft 0..1 fuer alles Folgende
 

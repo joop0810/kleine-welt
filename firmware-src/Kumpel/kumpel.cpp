@@ -113,6 +113,7 @@ void defaultConfig(Config &c) {
   c.homeAfter = 45;
   c.hotAbove = 28;
   c.autoRotate = 1;
+  c.nightOff = 1;
 }
 
 // ------------------------------------------------------------------ Entities
@@ -313,7 +314,13 @@ static int currentMood() {
   if (tiredness() > 0) return M_TIRED;
   return M_NEUTRAL;
 }
-uint8_t wantBrightness() { return sleeping() ? cfg.brightNight : cfg.brightDay; }
+static uint32_t greetUntil = 0;   // Begruessung laeuft (weiter unten gesetzt)
+uint8_t wantBrightness() {
+  if (!inSleepWindow()) return cfg.brightDay;
+  // nachts: aus (wenn gewuenscht), nach Antippen oder bei "Gute Nacht!" gedimmt sichtbar
+  if (cfg.nightOff && sleeping() && now >= greetUntil) return 0;
+  return cfg.brightNight;
+}
 
 // ------------------------------------------------------------------ Figuren
 // Alles, was das Aussehen gerade bestimmt: Stimmung plus kleine Zusaetze
@@ -553,9 +560,10 @@ static void skinSoft(float cx, float cy, float s, const Look &L) {
   uint16_t glow = cold ? C(0x5a8fd0) : C(0x2fa58a);
   // weicher Schein dahinter und Schatten darunter
   // Schein: jede Stufe nur als schmaler Ring (innen liegt die naechste Stufe bzw. der Koerper)
-  for (int k = 6; k >= 1; k--) {
-    gAlpha(0.03f * (7 - k));
-    gRRectHole(x0 - k * 7 * s, y0 - k * 7 * s, W + k * 14 * s, H + k * 14 * s, R + k * 7 * s, 7 * s, glow);
+  for (int k = 14; k >= 1; k--) {
+    float t = (15 - k) / 14.0f;
+    gAlpha(0.2f * t * t);
+    gRRectHole(x0 - k * 3 * s, y0 - k * 3 * s, W + k * 6 * s, H + k * 6 * s, R + k * 3 * s, 3 * s, glow);
   }
   gAlpha(0.35f);
   gEllipse(cx, bottom + 14 * s, W * 0.36f, 7 * s, C(0x0e2a24));
@@ -657,11 +665,20 @@ static void rainCloud(float x, float y) {
 }
 
 // ------------------------------------------------------------------ Bausteine
+// Seiten-Punkte nur kurz nach einer Beruehrung zeigen (dauerhaft gleiche Pixel brennen ein)
+static float dotsVisible() {
+  if (!lastTouch) return 0;
+  uint32_t d = now - lastTouch;
+  return d < 3000 ? 1 : (d < 4000 ? 1 - (d - 3000) / 1000.0f : 0);
+}
 static void dots(int active) {
   int n = nShown + 1;
-  if (n < 2) return;
+  float a = dotsVisible();
+  if (n < 2 || a <= 0) return;
+  gAlpha(a);
   float w = 16, x0 = CX - (n - 1) * w / 2;
   for (int i = 0; i < n; i++) gCircle(x0 + i * w, 447, i == active ? 4.5f : 3.2f, i == active ? K_TEXT : K_DIMMER);
+  gAlpha(1);
 }
 
 static const char *titleOf(const PageCfg &p, const Entity *e) {
@@ -902,20 +919,55 @@ void hintText(int i, char *out, int n) {
   snprintf(out, n, "%.*s%s%s", (int)(p - h.text), h.text, val, p + 2);
 }
 
-static void drawBubble(const char *text) {
-  char t[64];
-  gFit(F_SMALL, text, t, sizeof t, 282);
-  int w = gTextW(F_SMALL, t) + 40;
+// Sprechblase: passt der Text nicht in eine Zeile, wird er an Wortgrenzen auf zwei Zeilen umbrochen.
+// Liefert die Anzahl Zeilen.
+static int lastBubbleLines = 0;
+static int drawBubble(const char *text) {
+  const int W1 = 280, W2a = 250, W2b = 300;   // oben ist das runde Display schmaler
+  char l1[96], l2[96];
+  int lines = 1;
+  if (gTextW(F_SMALL, text) <= W1) {
+    snprintf(l1, sizeof l1, "%s", text);
+    l2[0] = 0;
+  } else {
+    // laengsten Anfang aus ganzen Woertern suchen, der in die obere Zeile passt
+    int n = strlen(text), cut = -1;
+    for (int i = 0; i <= n; i++) {
+      if (text[i] != ' ' && text[i] != 0) continue;
+      char tmp[96];
+      snprintf(tmp, sizeof tmp, "%.*s", i, text);
+      if (gTextW(F_SMALL, tmp) <= W2a) cut = i; else break;
+    }
+    if (cut <= 0) {   // ein einziges langes Wort: hart trennen
+      int k = strlen(text);
+      char tmp[96];
+      do {
+        k--;
+        while (k > 0 && ((uint8_t)text[k] & 0xC0) == 0x80) k--;
+        snprintf(tmp, sizeof tmp, "%.*s", k, text);
+      } while (k > 1 && gTextW(F_SMALL, tmp) > W2a);
+      cut = k;
+    }
+    snprintf(l1, sizeof l1, "%.*s", cut, text);
+    const char *rest = text + cut;
+    while (*rest == ' ') rest++;
+    gFit(F_SMALL, rest, l2, sizeof l2, W2b);
+    lines = l2[0] ? 2 : 1;
+  }
+  int w = gTextW(F_SMALL, l1), w2 = lines > 1 ? gTextW(F_SMALL, l2) : 0;
+  w = (w > w2 ? w : w2) + 40;
   if (w < 120) w = 120;
-  float x = CX - w / 2.0f, y = 62, h = 50;
-  gRRect(x, y, w, h, 22, K_BUBBLE);
+  float y = lines > 1 ? 50 : 62, h = lines > 1 ? 80 : 50;
+  gRRect(CX - w / 2.0f, y, w, h, 22, K_BUBBLE);
   gTriangle(CX - 11, y + h - 2, CX + 11, y + h - 2, CX, y + h + 13, K_BUBBLE);
-  gText(F_SMALL, CX, (int)(y + 11), t, K_BUBBLE_T, CENTER);
+  gText(F_SMALL, CX, (int)(y + 11), l1, K_BUBBLE_T, CENTER);
+  if (lines > 1) gText(F_SMALL, CX, (int)(y + 41), l2, K_BUBBLE_T, CENTER);
+  return lines;
 }
 
 // Begruessung, kleine Ticks und Strecken
 static char greet[24] = "";
-static uint32_t greetUntil = 0, stretchStart = 0;
+static uint32_t stretchStart = 0;
 static bool morningPending = false, windowInit = false, wasInWindow = false;
 static int tickType = 0;
 static uint32_t tickStart = 0, nextTick = 0, yawnStart = 0, nextYawn = 0;
@@ -956,12 +1008,13 @@ static void pageHome(int mood) {
   static uint32_t talkStart = 0;
   if (said[0] && strcmp(said, lastSaid)) talkStart = now;
   snprintf(lastSaid, sizeof lastSaid, "%s", said);
-  if (said[0]) drawBubble(said);
+  int lines = said[0] ? drawBubble(said) : 0;
+  lastBubbleLines = lines;
   look.talk = said[0] && now - talkStart < 1600 ? fabsf(sinf((now - talkStart) / 1000.0f * 11)) : 0;
   if (!said[0] && look.sad && calm(mood)) {
     rainCloud(CX + 78 + dx, (cfg.skin == SK_SOFT ? 82 : 112) + dy);
   }
-  drawSkin(CX + dx, (said[0] ? 252 : 240) + dy, 1.15f, mood);
+  drawSkin(CX + dx, (lines > 1 ? 268 : lines ? 252 : 240) + dy, 1.15f, mood);
   look.talk = 0;
   if (clockValid || testHours >= 0) {
     float h = hoursNow();
@@ -1172,6 +1225,30 @@ void begin(uint16_t *fb, uint32_t seed) {
   info[0][0] = info[1][0] = info[2][0] = 0;
 }
 
+// Hintergrundfarbe je Stimmung (dunkel - nur ein Hauch Farbe am Rand)
+static float bgCol[3] = {0, 0, 0}, bgHome = 0;
+static int shiftX = 0, shiftY = 0;
+static uint32_t moodColor(int mood) {
+  if (look.sad && calm(mood)) return 0x1a2430;                                  // Regen: graublau
+  if (look.shades && (mood == M_NEUTRAL || mood == M_HAPPY)) return 0x3a2e08;   // Sonne: warmgelb
+  switch (mood) {
+    case M_HAPPY: return 0x3c2208;       // warmes Orange
+    case M_SLEEPY: return 0x0a1034;      // Nachtblau
+    case M_COLD: return 0x0a2444;        // Eisblau
+    case M_SURPRISED: return 0x30103a;   // Violett
+    case M_TIRED: return 0x221438;       // Abenddaemmerung
+    default: return 0x0a2a24;            // ruhiges Petrol
+  }
+}
+static void nightStars() {   // ein paar funkelnde Sterne im Rand, wenn er schlaeft
+  static const int16_t S[7][2] = {{74, 96}, {388, 120}, {58, 300}, {410, 330}, {140, 418}, {330, 426}, {232, 22}};
+  for (int i = 0; i < 7; i++) {
+    gAlpha(0.35f + 0.35f * sinf(now / 1300.0f + i * 1.7f));
+    gCircle(S[i][0], S[i][1], i % 3 ? 1.6f : 2.2f, C(0xc8d2ff));
+  }
+  gAlpha(1);
+}
+
 // Beruehrungen sofort auswerten, unabhaengig vom Bildaufbau (sonst gehen bei
 // langsamen Bildern Teile einer Wischbewegung verloren)
 void feedTouch(uint32_t nowMs, const Touch *pts, int n) {
@@ -1243,20 +1320,37 @@ void tick(uint32_t nowMs, const Touch *pts, int n) {
   gazeX += (tx - gazeX) * 0.12f;
   gazeY += (ty - gazeY) * 0.12f;
 
-  gClear(K_BG);
+  // Hintergrund: sanftes Leuchten am Rand in der Farbe der Stimmung (nur auf der Startseite)
+  {
+    uint32_t want = moodColor(mood);
+    float home = page == 0 && !sliding ? 1.0f : 0.0f;
+    bgHome += (home - bgHome) * 0.08f;
+    for (int k = 0; k < 3; k++) {
+      float tgt = ((want >> (16 - 8 * k)) & 255) * bgHome;
+      bgCol[k] += (tgt - bgCol[k]) * 0.04f;   // weich ueberblenden
+    }
+    gRimBg(rgb565((int)bgCol[0], (int)bgCol[1], (int)bgCol[2]), 150, 236);
+    if (mood == M_SLEEPY && bgHome > 0.5f) nightStars();
+  }
+  // Pixel-Shift: alles wandert langsam auf einem kleinen Kreis (gegen Einbrennen)
+  float ph = (now / 1000.0f) / 480.0f * 2 * PI_F;   // eine Runde in 8 Minuten
+  shiftX = (int)lroundf(cosf(ph) * 6);
+  shiftY = (int)lroundf(sinf(ph) * 6);
   if (sliding) {
     float p = (now - slideStart) / (float)SLIDE_MS;
     if (p >= 1) { sliding = false; p = 1; }
     float e = 1 - (1 - p) * (1 - p) * (1 - p);
     int dir = slideTo > slideFrom ? 1 : -1;
     if (sliding) {
-      gOffset((int)(-dir * SCR * e), 0); drawPage(slideFrom, mood);
-      gOffset((int)(dir * SCR * (1 - e)), 0); drawPage(slideTo, mood);
+      gOffset((int)(-dir * SCR * e) + shiftX, shiftY); drawPage(slideFrom, mood);
+      gOffset((int)(dir * SCR * (1 - e)) + shiftX, shiftY); drawPage(slideTo, mood);
       gOffset(0, 0);
       return;
     }
   }
+  gOffset(shiftX, shiftY);
   drawPage(page, mood);
+  gOffset(0, 0);
 }
 
 Debug debug() {
@@ -1276,6 +1370,9 @@ Debug debug() {
   d.yawn = look.yawn;
   d.greet = now < greetUntil ? greet : "";
   d.hearts = heartsNow();
+  d.dots = dotsVisible();
+  d.shiftX = shiftX; d.shiftY = shiftY;
+  d.bubbleLines = lastBubbleLines;
   if (now < greetUntil) d.bubble = page == 0;
   return d;
 }

@@ -87,6 +87,7 @@ button:disabled{opacity:.5}
 <label style="margin-top:16px">Wetter (Sonnenbrille bei Sonne, Regenwolke bei Regen)</label><input id="weather" list="ents_weather" placeholder="z. B. weather.forecast_home (leer = aus)">
 <label>Schwitzt ab Außentemperatur (°C)</label><input id="hot" type="number" step="0.5">
 <label style="margin-top:16px"><input type="checkbox" id="sleepon">Nachts schlafen und dimmen (vorher wird er müde und gähnt)</label>
+<label><input type="checkbox" id="nightoff">Nachts Display ganz aus – schont das AMOLED (Antippen weckt ihn)</label>
 <div class="grid2"><div><label>von</label><input id="sfrom" type="time"></div><div><label>bis</label><input id="sto" type="time"></div></div>
 <h2 style="margin-top:20px">Hinweise <span class="sub">(Sprechblase)</span></h2>
 <div id="hints"></div>
@@ -194,14 +195,14 @@ function fill(){
   renderSkins();renderPages();renderHints();
   $('cold').value=cfg.cold.entity||'';$('coldb').value=cfg.cold.below;
   const wt=cfg.weather||{};$('weather').value=wt.entity||'';$('hot').value=wt.hot??28;
-  $('sleepon').checked=cfg.sleep.on;$('sfrom').value=cfg.sleep.from;$('sto').value=cfg.sleep.to;
+  $('sleepon').checked=cfg.sleep.on;$('nightoff').checked=cfg.sleep.off!==false;$('sfrom').value=cfg.sleep.from;$('sto').value=cfg.sleep.to;
   $('bd').value=cfg.bright.day;$('bn').value=cfg.bright.night;$('home').value=cfg.homeAfter;$('rot').value=String(cfg.rotate??'auto');
   $('bdv').textContent=cfg.bright.day;$('bnv').textContent=cfg.bright.night;
 }
 function collect(){
   cfg.cold={entity:$('cold').value.trim(),below:parseFloat($('coldb').value)||18};
   cfg.weather={entity:$('weather').value.trim(),hot:parseFloat($('hot').value)||28};
-  cfg.sleep={on:$('sleepon').checked,from:$('sfrom').value||'23:00',to:$('sto').value||'07:00'};
+  cfg.sleep={on:$('sleepon').checked,off:$('nightoff').checked,from:$('sfrom').value||'23:00',to:$('sto').value||'07:00'};
   cfg.bright={day:+$('bd').value,night:+$('bn').value};
   cfg.homeAfter=+$('home').value||45;
   cfg.rotate=$('rot').value==='auto'?'auto':+$('rot').value;
