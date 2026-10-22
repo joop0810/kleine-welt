@@ -5,7 +5,7 @@
 
 namespace kb {
 
-static const char *SKIN_KEYS[] = {"eyes", "drop", "pebble"};
+static const char *SKIN_KEYS[] = {"eyes", "drop", "pebble", "soft"};
 const char *skinKey(int s) { return s >= 0 && s < SKINS ? SKIN_KEYS[s] : "eyes"; }
 
 static void copy(char *dst, size_t n, JsonVariantConst v) {

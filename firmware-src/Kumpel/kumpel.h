@@ -14,7 +14,7 @@ constexpr int MAX_PAGES = 8, MAX_HINTS = 4, ID_LEN = 64;
 
 enum PageType : uint8_t { P_NONE = 0, P_CLIMATE, P_LIGHT, P_SWITCH, P_SENSOR, P_BUTTON, P_VACUUM, PAGE_TYPES };
 enum Cond : uint8_t { C_EQ = 0, C_NE, C_CONTAINS, C_LT, C_GT, CONDS };
-enum Skin : uint8_t { SK_EYES = 0, SK_DROP, SK_PEBBLE, SKINS };
+enum Skin : uint8_t { SK_EYES = 0, SK_DROP, SK_PEBBLE, SK_SOFT, SKINS };
 enum Mood : uint8_t { M_NEUTRAL = 0, M_HAPPY, M_SLEEPY, M_COLD, M_SURPRISED, M_TIRED, MOODS };
 
 struct PageCfg {
@@ -103,6 +103,7 @@ struct Debug {
   bool shades, sad, sweat;
   float lid, yawn;
   const char *greet; // aktuelle Begruessung ("" = keine)
+  bool hearts;       // Herzaugen (zweimal schnell antippen)
 };
 Debug debug();
 void hintText(int i, char *out, int n);   // Text der Sprechblase, {} = Wert der Entity

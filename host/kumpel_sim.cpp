@@ -227,6 +227,21 @@ int main(int argc, char **argv) {
     setConfig(c);
   }
 
+  // --- Marshmallow: zweimal antippen = Herzaugen
+  {
+    Config cm = c; cm.skin = SK_SOFT; setConfig(cm);
+    now += 30000; run(1);
+    tap(233, 240); run(0.2f);
+    check(debug().mood == M_HAPPY && !debug().hearts, "einmal antippen: freut sich");
+    save("soft_freut");
+    tap(233, 240); run(0.2f);
+    check(debug().hearts, "zweimal antippen: Herzaugen");
+    save("soft_herzen");
+    run(3);
+    check(!debug().hearts, "Herzen gehen wieder weg");
+    setConfig(c);
+  }
+
   // --- lange druecken = naechste Figur
   hold(233, 240, 1.0f);
   uint8_t sk;

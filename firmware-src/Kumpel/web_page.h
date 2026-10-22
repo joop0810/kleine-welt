@@ -31,10 +31,10 @@ button:disabled{opacity:.5}
 .row>*{flex:1}
 .msg{font-size:.9rem;margin-top:10px;min-height:1.2em}
 .msg.ok{color:var(--ok)}.msg.err{color:var(--warn)}
-.skins{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.skins{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .skin{border:2px solid var(--line);border-radius:12px;padding:10px 6px;text-align:center;cursor:pointer;background:#0e0f12}
 .skin.on{border-color:var(--acc)}
-.skin svg{width:72px;height:72px;display:block;margin:0 auto 6px}
+.skin svg{width:60px;height:60px;display:block;margin:0 auto 6px}
 .item{border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px}
 .item .head{display:flex;gap:8px;align-items:center;justify-content:space-between}
 .item .head b{font-size:.95rem}
@@ -140,7 +140,8 @@ const DOM={climate:['climate'],light:['light'],switch:['switch','input_boolean',
  sensor:null,button:['scene','script','button','input_button','automation'],vacuum:['vacuum']};
 const SKINS=[['eyes','Leuchtaugen','<rect x="18" y="20" width="13" height="32" rx="6.5" fill="#5ee6d0"/><rect x="41" y="20" width="13" height="32" rx="6.5" fill="#5ee6d0"/>'],
  ['drop','Tröpfchen','<path d="M36 10C40 20 54 30 54 44A18 18 0 0 1 18 44C18 30 32 20 36 10Z" fill="#3fa9d6"/><circle cx="30" cy="46" r="2.6" fill="#0b2a3a"/><circle cx="42" cy="46" r="2.6" fill="#0b2a3a"/><path d="M32 52Q36 55 40 52" stroke="#0b2a3a" stroke-width="2" fill="none" stroke-linecap="round"/>'],
- ['pebble','Kiesel','<ellipse cx="36" cy="40" rx="26" ry="19" fill="#e8d3a8"/><circle cx="29" cy="38" r="2.6" fill="#4a3b22"/><circle cx="43" cy="38" r="2.6" fill="#4a3b22"/><path d="M32 44Q36 47 40 44" stroke="#4a3b22" stroke-width="2" fill="none" stroke-linecap="round"/>']];
+ ['pebble','Kiesel','<ellipse cx="36" cy="40" rx="26" ry="19" fill="#e8d3a8"/><circle cx="29" cy="38" r="2.6" fill="#4a3b22"/><circle cx="43" cy="38" r="2.6" fill="#4a3b22"/><path d="M32 44Q36 47 40 44" stroke="#4a3b22" stroke-width="2" fill="none" stroke-linecap="round"/>'],
+ ['soft','Marshmallow','<rect x="12" y="20" width="48" height="36" rx="16" fill="#e4f1ec"/><path d="M25 40Q29 35 33 40M39 40Q43 35 47 40" stroke="#1d1f22" stroke-width="2.6" fill="none" stroke-linecap="round"/><ellipse cx="22" cy="45" rx="4" ry="2.2" fill="#f7a6b3"/><ellipse cx="50" cy="45" rx="4" ry="2.2" fill="#f7a6b3"/>']];
 let cfg={},ents=[];
 const api=(p,b)=>fetch(p,b===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(r=>r.json());
 function msg(id,t,ok){const e=$(id);e.textContent=t;e.className='msg '+(ok===undefined?'':ok?'ok':'err')}

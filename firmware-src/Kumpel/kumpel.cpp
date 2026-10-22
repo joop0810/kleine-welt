@@ -86,7 +86,7 @@ static bool skinChanged = false;
 
 // ------------------------------------------------------------------ Texte
 static const char *MOODS_N[] = {"neutral", "froehlich", "schlaeft", "friert", "ueberrascht", "muede"};
-static const char *SKINS_N[] = {"Leuchtaugen", "Troepfchen", "Kiesel"};
+static const char *SKINS_N[] = {"Leuchtaugen", "Troepfchen", "Kiesel", "Marshmallow"};
 static const char *PT_KEYS[] = {"", "climate", "light", "switch", "sensor", "button", "vacuum"};
 static const char *COND_KEYS[] = {"eq", "ne", "contains", "lt", "gt"};
 const char *moodName(int m) { return m >= 0 && m < MOODS ? MOODS_N[m] : "?"; }
@@ -327,6 +327,7 @@ struct Look {
   float talk;    // Mund bewegt sich beim Sprechen 0..1
   bool wink, tongue;
 };
+static uint32_t heartsUntil = 0;   // Herzaugen bis
 static Look look = {M_NEUTRAL, 0, 0, 0, 0, false, false, false, 0, false, false};
 static const uint16_t K_TONGUE = C(0xff7a93);   // pro Frame in tick() gesetzt
 
@@ -523,6 +524,108 @@ static void skinPebble(float cx, float cy, float s, const Look &L) {
   if (mood == M_SLEEPY && s > 0.6f) drawZ(cx, cy, s);
 }
 
+// ---- Marshmallow: weiches, knautschiges Kissen mit Kulleraugen
+static void heart(float x, float y, float r, uint16_t c) {
+  gCircle(x - r * 0.48f, y - r * 0.2f, r * 0.56f, c);
+  gCircle(x + r * 0.48f, y - r * 0.2f, r * 0.56f, c);
+  gTriangle(x - r * 1.02f, y - r * 0.02f, x + r * 1.02f, y - r * 0.02f, x, y + r * 1.02f, c);
+}
+static void sparkle(float x, float y, float r, uint16_t c) {   // vierzackiger Glitzerstern
+  float w = r * 0.24f;
+  gTriangle(x - w, y, x + w, y, x, y - r, c);
+  gTriangle(x - w, y, x + w, y, x, y + r, c);
+  gTriangle(x, y - w, x, y + w, x - r, y, c);
+  gTriangle(x, y - w, x, y + w, x + r, y, c);
+}
+static bool heartsNow() { return now < heartsUntil && now < happyUntil; }
+
+static void skinSoft(float cx, float cy, float s, const Look &L) {
+  int mood = L.mood;
+  bool cold = mood == M_COLD;
+  // atmen = leicht breiter/flacher und wieder zurueck (wie ein weiches Kissen)
+  float br = sinf(now / (mood == M_SLEEPY ? 1500.0f : 1050.0f)) * (mood == M_SLEEPY ? 0.04f : 0.022f);
+  if (cold) cx += sinf(now / 25.0f) * 2 * s;
+  float W = 176 * s * (1 + br), H = 132 * s * (1 - br), R = 58 * s;
+  float bottom = cy + 70 * s;
+  float x0 = cx - W / 2, y0 = bottom - H;
+  uint16_t body = cold ? C(0xd6e6f5) : C(0xe4f1ec);
+  uint16_t glow = cold ? C(0x5a8fd0) : C(0x2fa58a);
+  // weicher Schein dahinter und Schatten darunter
+  for (int k = 8; k >= 1; k--) {   // viele flache Stufen = weicher Uebergang
+    gAlpha(0.05f);
+    gRRect(x0 - k * 6 * s, y0 - k * 6 * s, W + k * 12 * s, H + k * 12 * s, R + k * 6 * s, glow);
+  }
+  gAlpha(0.35f);
+  gEllipse(cx, bottom + 30 * s, W * 0.36f, 9 * s, C(0x0e2a24));
+  gAlpha(1);
+  // Koerper mit sanfter Schattierung: dunklerer Rand, heller Kern, Glanz oben links
+  gRRect(x0, y0, W, H, R, mix565(body, 0, 0.22f));
+  gRRect(x0 + 3 * s, y0 + 2 * s, W - 6 * s, H - 7 * s, R - 3 * s, mix565(body, 0, 0.08f));
+  gRRect(x0 + 10 * s, y0 + 6 * s, W - 20 * s, H - 22 * s, R - 10 * s, body);
+  gAlpha(0.55f);
+  gEllipse(x0 + W * 0.27f, y0 + H * 0.2f, 26 * s, 11 * s, 0xFFFF);
+  gAlpha(1);
+
+  uint16_t ink = C(0x1d1f22), blush = C(0xf7a6b3);
+  float ex = 34 * s, ey = y0 + H * 0.5f, gx = gazeX * 6 * s, gy = gazeY * 5 * s;
+  bool yawning = L.yawn > 0.05f && calm(mood);
+  bool shades = L.shades && (mood == M_NEUTRAL || mood == M_HAPPY);
+  bool hearts = mood == M_HAPPY && heartsNow();
+  // Baeckchen
+  gAlpha(hearts ? 0.85f : 0.6f);
+  for (int side = -1; side <= 1; side += 2) gEllipse(cx + side * 50 * s + gx * 0.5f, ey + 16 * s, 14 * s, 7.5f * s, blush);
+  gAlpha(1);
+  // Augen
+  for (int side = -1; side <= 1; side += 2) {
+    float x = cx + side * ex + gx - side * L.cross * ex * 0.5f, y = ey + gy;
+    if (shades) break;
+    if (hearts) heart(x, y - 2 * s, 13 * s, C(0xff5a73));
+    else if (mood == M_HAPPY || (L.wink && side == 1 && calm(mood))) gArc(x, y + 7 * s, 11 * s, 4.6f * s, 205, 335, ink);
+    else if (mood == M_SLEEPY || yawning) gArc(x, y - 4 * s, 11 * s, 4.2f * s, 25, 155, ink);
+    else if (L.bl > 0.5f) gCapsule(x - 9 * s, y, x + 9 * s, y, 3 * s, ink);
+    else {
+      float r = (mood == M_SURPRISED ? 11.5f : 8.5f) * s, hl = (mood == M_SURPRISED ? 2 : 4) * s;
+      gCapsule(x, y - hl, x, y + hl, r, ink);
+      gCircle(x - r * 0.35f, y - hl - r * 0.25f, r * 0.32f, 0xFFFF);   // Lichtpunkt im Auge
+      if (L.lid > 0.01f) gRRect(x - r - 2, y - hl - r - 2, 2 * r + 4, (2 * (hl + r) + 3) * 0.55f * L.lid + 1, 0, body);
+    }
+    if (L.sad && calm(mood)) gCapsule(x - side * 9 * s, y - 19 * s, x + side * 7 * s, y - 14 * s, 2.2f * s, ink);
+  }
+  if (shades) {
+    for (int side = -1; side <= 1; side += 2) lens(cx + side * ex + gx, ey + gy, 40 * s, 26 * s, s * 0.6f, ink);
+    gCapsule(cx - ex + gx + 21 * s, ey + gy - 4 * s, cx + ex + gx - 21 * s, ey + gy - 4 * s, 2.2f * s, ink);
+  }
+  // Mund nur, wenn er etwas tut (sonst ganz schlicht, ohne Mund)
+  float mx = cx + gx * 0.7f, my = ey + 22 * s + gy;
+  if (yawning) gEllipse(mx, my + 2 * s, (5 + 6 * L.yawn) * s, (4 + 9 * L.yawn) * s, ink);
+  else if (L.talk > 0.05f && mood != M_SLEEPY) gEllipse(mx, my, 7 * s, (2 + 6 * L.talk) * s, ink);
+  else if (L.tongue && calm(mood)) {
+    gEllipse(mx + 3 * s, my + 3 * s, 5 * s, 6.5f * s, K_TONGUE);
+    gArc(mx, my - 8 * s, 10 * s, 3.4f * s, 40, 140, ink);
+  } else if (mood == M_SURPRISED) gRing(mx, my + 2 * s, 6 * s, 3.4f * s, ink);
+  else if (cold) {
+    for (int k = 0; k < 4; k++) {
+      float xk = mx - 12 * s + k * 6 * s;
+      gCapsule(xk, my + (k % 2 ? -2 : 2) * s, xk + 6 * s, my + (k % 2 ? 2 : -2) * s, 1.8f * s, ink);
+    }
+  } else if (shades) gArc(mx + 4 * s, my - 9 * s, 12 * s, 3.4f * s, 25, 115, ink);
+  else if (L.sad && calm(mood)) gArc(mx, my + 9 * s, 9 * s, 3.2f * s, 225, 315, ink);
+  // Glitzer, wenn er sich freut
+  if (mood == M_HAPPY && s > 0.6f) {
+    uint16_t sp = C(0xd8e2e8);
+    for (int k = 0; k < 3; k++) {
+      float p = fmodf(now / 700.0f + k * 0.33f, 1.0f);
+      gAlpha(sinf(p * PI_F));
+      static const float SX[3] = {-36, -6, 20}, SY[3] = {-40, -66, -48}, SR[3] = {13, 17, 11};
+      sparkle(cx + SX[k] * s + 30 * s, y0 + SY[k] * s, SR[k] * s * (0.7f + 0.3f * sinf(p * PI_F)), sp);
+    }
+    gAlpha(1);
+  }
+  if (L.sweat && mood != M_SLEEPY) sweatDrop(x0 + W - 22 * s, y0 + 10 * s, s);
+  if (cold) shiverLines(cx, ey, W / 2 + 16 * s, s, body);
+  if (mood == M_SLEEPY && s > 0.6f) drawZ(cx, y0 + 30 * s, s);
+}
+
 static void drawSkin(float cx, float cy, float s, int mood) {
   Look L = look;
   L.mood = mood;
@@ -530,6 +633,7 @@ static void drawSkin(float cx, float cy, float s, int mood) {
   switch (cfg.skin) {
     case SK_DROP: skinDrop(cx, cy, s, L); break;
     case SK_PEBBLE: skinPebble(cx, cy, s, L); break;
+    case SK_SOFT: skinSoft(cx, cy, s, L); break;
     default: skinEyes(cx, cy, s, L);
   }
 }
@@ -964,6 +1068,8 @@ static void releaseArc() {
 }
 
 static void onTap(int target, int sub) {
+  // nochmal antippen, solange er sich noch freut -> Herzaugen
+  if (target == T_CHAR && now < happyUntil) heartsUntil = now + 2500;
   happyUntil = target == T_CHAR ? now + 2500 : happyUntil;
   if (page == 0) { happyUntil = now + 2500; return; }
   const PageCfg &p = cfg.pages[pageIdx[page - 1]];
@@ -1160,6 +1266,7 @@ Debug debug() {
   d.lid = look.lid;
   d.yawn = look.yawn;
   d.greet = now < greetUntil ? greet : "";
+  d.hearts = heartsNow();
   if (now < greetUntil) d.bubble = page == 0;
   return d;
 }
