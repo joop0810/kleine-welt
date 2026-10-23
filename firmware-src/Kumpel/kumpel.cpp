@@ -86,7 +86,7 @@ static bool skinChanged = false;
 
 // ------------------------------------------------------------------ Texte
 static const char *MOODS_N[] = {"neutral", "froehlich", "schlaeft", "friert", "ueberrascht", "muede"};
-static const char *SKINS_N[] = {"Leuchtaugen", "Troepfchen", "Kiesel", "Marshmallow"};
+static const char *SKINS_N[] = {"Leuchtaugen", "Troepfchen", "Kiesel", "Marshmallow", "Kulleraugen", "Katze", "Roboter"};
 static const char *PT_KEYS[] = {"", "climate", "light", "switch", "sensor", "button", "vacuum"};
 static const char *COND_KEYS[] = {"eq", "ne", "contains", "lt", "gt"};
 const char *moodName(int m) { return m >= 0 && m < MOODS ? MOODS_N[m] : "?"; }
@@ -636,6 +636,214 @@ static void skinSoft(float cx, float cy, float s, const Look &L) {
   if (mood == M_SLEEPY && s > 0.6f) drawZ(cx, y0 + 30 * s, s);
 }
 
+// ---- Vollgesichter: das ganze runde Display ist das Gesicht
+// u = Massstab (1 auf der Startseite), ey = Augenlinie
+static bool fullFace(int skin) { return skin == SK_FACE || skin == SK_CAT || skin == SK_ROBOT; }
+
+
+static const uint16_t CAT_INK = C(0x000000);
+
+static void faceBackground(int) {}   // Gesichter bleiben auf schwarzem Grund (schlicht, schont das AMOLED)
+
+// Mund fuer die Vollgesichter (Farbe c, Mitte mx/my)
+static void bigMouth(float mx, float my, float u, const Look &L, uint16_t c, uint16_t bg, bool cat) {
+  int mood = L.mood;
+  bool yawning = L.yawn > 0.05f && calm(mood);
+  float t = 7 * u;
+  if (yawning) {
+    float rx = (16 + 14 * L.yawn) * u, ry = (12 + 26 * L.yawn) * u;
+    gEllipse(mx, my + 6 * u, rx, ry, c);
+    gEllipse(mx, my + 6 * u, rx - t, ry - t, bg);
+  } else if (L.talk > 0.05f && mood != M_SLEEPY) {
+    float ry = (5 + 20 * L.talk) * u;
+    gEllipse(mx, my + 4 * u, 22 * u, ry, c);
+    if (ry > t + 2) gEllipse(mx, my + 4 * u, 22 * u - t, ry - t, bg);
+  } else if (cat && calm(mood) && !L.tongue && !L.sad) {   // Katzenmaul "ω"
+    gArc(mx - 14 * u, my - 6 * u, 14 * u, 5 * u, 20, 160, c);
+    gArc(mx + 14 * u, my - 6 * u, 14 * u, 5 * u, 20, 160, c);
+  } else if (L.tongue && calm(mood)) {
+    gEllipse(mx + 8 * u, my + 14 * u, 13 * u, 17 * u, K_TONGUE);
+    gArc(mx, my - 22 * u, 32 * u, t, 45, 135, c);
+  } else switch (mood) {
+    case M_HAPPY:   // offenes Lachen
+      gCircle(mx, my - 12 * u, 38 * u, c);
+      gRRect(mx - 42 * u, my - 54 * u, 84 * u, 42 * u, 0, bg);
+      gEllipse(mx, my + 14 * u, 16 * u, 8 * u, K_TONGUE);
+      break;
+    case M_SLEEPY: gCircle(mx, my, (7 + 2 * sinf(now / 800.0f)) * u, mix565(bg, c, 0.7f)); break;
+    case M_SURPRISED: gRing(mx, my + 4 * u, 18 * u, t, c); break;
+    case M_COLD:
+      for (int k = 0; k < 6; k++) {
+        float x0 = mx - 30 * u + k * 10 * u;
+        gCapsule(x0, my + (k % 2 ? -5 : 5) * u, x0 + 10 * u, my + (k % 2 ? 5 : -5) * u, 3 * u, c);
+      }
+      break;
+    case M_TIRED: gCapsule(mx - 20 * u, my, mx + 20 * u, my + 3 * u, 3.5f * u, c); break;
+    default:
+      if (L.sad) gArc(mx, my + 26 * u, 30 * u, t, 230, 310, c);
+      else if (L.shades) gArc(mx + 8 * u, my - 26 * u, 34 * u, t, 30, 110, c);
+      else gArc(mx, my - 26 * u, 32 * u, t, 55, 125, c);
+  }
+}
+
+static void bigShades(float cx, float ey, float u, float gap, uint16_t frame) {
+  for (int side = -1; side <= 1; side += 2) lens(cx + side * gap, ey, 112 * u, 78 * u, 1.6f * u, frame);
+  gCapsule(cx - gap + 58 * u, ey - 14 * u, cx + gap - 58 * u, ey - 14 * u, 4.5f * u, frame);
+}
+
+// --- Kulleraugen: grosse weisse Augen mit Pupillen, Brauen, Mund
+static void skinFace(float cx, float cy, float s, const Look &L) {
+  float u = s / 1.15f;
+  int mood = L.mood;
+  bool cold = mood == M_COLD;
+  if (cold) cx += sinf(now / 25.0f) * 2.5f * u;
+  uint16_t white = cold ? C(0xc4d4ec) : C(0xdedad4), ink = C(0x000000);
+  float gap = 80 * u, ey = cy - 38 * u;
+  bool yawning = L.yawn > 0.05f && calm(mood);
+  bool hearts = mood == M_HAPPY && heartsNow();
+  float gx = gazeX * 14 * u, gy = gazeY * 12 * u;
+  for (int side = -1; side <= 1; side += 2) {
+    float x = cx + side * gap, y = ey;
+    if (L.shades && (mood == M_NEUTRAL || mood == M_HAPPY)) break;
+    float px = x + gx - side * L.cross * 16 * u, py = y + gy;
+    if (hearts) { heart(x, y, 40 * u, C(0xff5a73)); continue; }
+    if (mood == M_HAPPY || (L.wink && side == 1 && calm(mood))) { gArc(x, y + 22 * u, 34 * u, 15 * u, 205, 335, white); continue; }
+    if (mood == M_SLEEPY || yawning) { gArc(x, y - 6 * u, 32 * u, 11 * u, 25, 155, white); continue; }
+    float rx = 33 * u, ry = (mood == M_SURPRISED ? 52 : 44) * u * (1 - 0.92f * L.bl);
+    gEllipse(x, y, rx, ry, white);
+    if (ry > 10 * u) {
+      float pr = (mood == M_SURPRISED ? 13 : 19) * u;
+      gCircle(px, py + 4 * u, pr, ink);
+      gCircle(px - pr * 0.35f, py + 4 * u - pr * 0.4f, pr * 0.3f, white);
+    }
+    if (L.lid > 0.01f) gRRect(x - rx - 3, y - ry - 3, 2 * rx + 6, (2 * ry + 6) * 0.55f * L.lid + 2, 0, 0);
+    // Brauen
+    // Brauen nur, wenn er etwas fuehlt (traurig, friert, ueberrascht) - sonst ganz schlicht
+    if (L.sad || cold || mood == M_SURPRISED) {
+      float by = y - ry - 18 * u, lift = mood == M_SURPRISED ? 0 : 13;
+      if (mood == M_SURPRISED) by -= 10 * u;
+      gCapsule(x - side * 28 * u, by - lift * u, x + side * 22 * u, by + lift * 0.3f * u, 5 * u, white);
+    }
+  }
+  if (L.shades && (mood == M_NEUTRAL || mood == M_HAPPY)) bigShades(cx, ey, u, gap, white);
+  bigMouth(cx + gx * 0.4f, ey + 112 * u, u, L, white, 0, false);
+  if (L.sweat && mood != M_SLEEPY) sweatDrop(cx + 150 * u, ey - 60 * u, 2.2f * u);
+  if (cold) shiverLines(cx, ey + 20 * u, 175 * u, 1.5f * u, white);
+  if (mood == M_SLEEPY && s > 0.6f) drawZ(cx + 60 * u, ey - 10 * u, s);
+}
+
+// --- Katze: Fell, Katzenaugen mit Schlitzpupillen, Naeschen, Schnurrhaare
+static void skinCat(float cx, float cy, float s, const Look &L) {
+  float u = s / 1.15f;
+  int mood = L.mood;
+  bool cold = mood == M_COLD;
+  uint16_t fur = 0;   // schwarzer Grund
+  if (cold) cx += sinf(now / 25.0f) * 2.5f * u;
+  float gap = 82 * u, ey = cy - 44 * u;
+  bool yawning = L.yawn > 0.05f && calm(mood);
+  bool hearts = mood == M_HAPPY && heartsNow();
+  float gx = gazeX * 10 * u, gy = gazeY * 8 * u;
+  uint16_t iris = cold ? C(0x8ab8d8) : C(0x8fb848), line = C(0x8a8a92);
+  for (int side = -1; side <= 1; side += 2) {
+    float x = cx + side * gap, y = ey;
+    if (L.shades && (mood == M_NEUTRAL || mood == M_HAPPY)) break;
+    if (hearts) { heart(x, y, 38 * u, C(0xff5a73)); continue; }
+    if (mood == M_HAPPY || (L.wink && side == 1 && calm(mood))) { gArc(x, y + 20 * u, 30 * u, 8 * u, 205, 335, iris); continue; }
+    if (mood == M_SLEEPY || yawning) { gArc(x, y - 6 * u, 30 * u, 7 * u, 25, 155, iris); continue; }
+    float rx = 38 * u, ry = (mood == M_SURPRISED ? 38 : 32) * u * (1 - 0.92f * L.bl);
+    gEllipse(x, y, rx, ry, iris);
+    if (ry > 8 * u) {
+      float px = x + gx - side * L.cross * 14 * u, py = y + gy;
+      if (mood == M_SURPRISED || mood == M_HAPPY) gCircle(px, py, 18 * u, CAT_INK);   // grosse Pupillen
+      else gCapsule(px, py - ry * 0.72f, px, py + ry * 0.72f, 6.5f * u, CAT_INK);
+      gCircle(px - 10 * u, py - 12 * u, 5 * u, C(0xd8d8d8));
+    }
+    if (L.lid > 0.01f) gRRect(x - rx - 6, y - ry - 6, 2 * rx + 12, (2 * ry + 12) * 0.55f * L.lid + 2, 0, fur);
+    if (L.sad) gCapsule(x - side * 30 * u, y - ry - 20 * u, x + side * 18 * u, y - ry - 8 * u, 4 * u, line);
+  }
+  if (L.shades && (mood == M_NEUTRAL || mood == M_HAPPY)) bigShades(cx, ey, u, gap, line);
+  // Naeschen
+  float ny = ey + 72 * u;
+  uint16_t nose = C(0xc98a98);
+  gTriangle(cx - 12 * u, ny, cx + 12 * u, ny, cx, ny + 10 * u, nose);
+  gCapsule(cx, ny + 9 * u, cx, ny + 18 * u, 2 * u, line);
+  // Schnurrhaare: je zwei, duenn und gedaempft
+  float w = sinf(now / 1400.0f) * 2 * u;
+  for (int side = -1; side <= 1; side += 2)
+    for (int k = 0; k <= 1; k++) {
+      float x0 = cx + side * 70 * u, y0 = ny + 14 * u + k * 16 * u;
+      gCapsule(x0, y0, cx + side * 170 * u, y0 - 10 * u + k * 18 * u + w, 1.4f * u, mix565(0, line, 0.7f));
+    }
+  bigMouth(cx, ny + 30 * u, u * 0.7f, L, line, fur, true);
+  if (L.sweat && mood != M_SLEEPY) sweatDrop(cx + 150 * u, ey - 56 * u, 2.2f * u);
+  if (cold) shiverLines(cx, ey + 30 * u, 182 * u, 1.5f * u, C(0xd8e6ff));
+  if (mood == M_SLEEPY && s > 0.6f) drawZ(cx + 60 * u, ey - 10 * u, s);
+}
+
+// --- Roboter: LED-Augen mit Scanlines, LED-Mund (Equalizer beim Sprechen)
+static void scan(float x, float y, float w, float h, float u) {   // schwarze Zeilen ueber den LEDs
+  for (float yy = y; yy < y + h; yy += 7 * u) gRRect(x, yy, w, 2.2f * u, 0, 0);
+}
+static void skinRobot(float cx, float cy, float s, const Look &L) {
+  float u = s / 1.15f;
+  int mood = L.mood;
+  bool cold = mood == M_COLD;
+  uint16_t led = cold ? C(0x8ab0d0) : C(0x38b8cc);
+  if (cold) cx += sinf(now / 25.0f) * 2 * u;
+  float gap = 84 * u, ey = cy - 40 * u;
+  bool yawning = L.yawn > 0.05f && calm(mood);
+  bool hearts = mood == M_HAPPY && heartsNow();
+  float gx = gazeX * 12 * u, gy = gazeY * 10 * u;
+  for (int side = -1; side <= 1; side += 2) {
+    float x = cx + side * gap + gx - side * L.cross * 18 * u, y = ey + gy;
+    float w = 76 * u, h = 76 * u;
+    if (L.shades && (mood == M_NEUTRAL || mood == M_HAPPY)) break;
+    if (hearts) heart(x, y, 38 * u, C(0xff4f8b));
+    else if (mood == M_HAPPY || (L.wink && side == 1 && calm(mood))) {   // ^ aus zwei Balken
+      gCapsule(x - 32 * u, y + 14 * u, x, y - 16 * u, 9 * u, led);
+      gCapsule(x, y - 16 * u, x + 32 * u, y + 14 * u, 9 * u, led);
+    } else if (mood == M_SLEEPY || yawning) gRRect(x - 36 * u, y + 4 * u, 72 * u, 12 * u, 5 * u, led);
+    else if (mood == M_SURPRISED) gRing(x, y, 38 * u, 14 * u, led);
+    else {
+      float hh = h * (1 - 0.88f * L.bl) * (1 - 0.5f * L.lid);
+      gRRect(x - w / 2, y + h / 2 - hh, w, hh, 14 * u, led);
+      if (L.sad) gTriangle(x - side * (w / 2 + 2), y + h / 2 - hh - 2, x + side * (w / 2 + 2), y + h / 2 - hh - 2,
+                           x + side * (w / 2 + 2), y + h / 2 - hh + 28 * u, 0);   // aussen haengend = traurig
+    }
+    scan(x - 50 * u, y - 52 * u, 100 * u, 104 * u, u);
+  }
+  if (L.shades && (mood == M_NEUTRAL || mood == M_HAPPY)) {
+    gRRect(cx - 168 * u, ey - 34 * u, 336 * u, 64 * u, 22 * u, led);
+    gRRect(cx - 162 * u, ey - 28 * u, 324 * u, 52 * u, 18 * u, C(0x101418));
+    gCapsule(cx - 120 * u, ey - 8 * u, cx - 80 * u, ey - 8 * u, 3 * u, led);
+  }
+  // LED-Mund: 7 Segmente
+  float my = ey + 118 * u;
+  if (yawning || mood == M_SURPRISED) {
+    float r = (mood == M_SURPRISED ? 20 : 14 + 18 * L.yawn) * u;
+    gRing(cx, my, r, 10 * u, led);
+  } else if (L.tongue && calm(mood)) {
+    gRRect(cx - 50 * u, my - 6 * u, 100 * u, 12 * u, 5 * u, led);
+    gRRect(cx + 4 * u, my + 6 * u, 26 * u, 24 * u, 8 * u, K_TONGUE);
+  } else if (mood == M_SLEEPY) {
+    gCircle(cx, my, (7 + 2 * sinf(now / 800.0f)) * u, mix565(0, led, 0.6f));
+  } else {
+    for (int k = -3; k <= 3; k++) {
+      float x = cx + k * 20 * u, hgt = 12 * u, off = 0;
+      if (L.talk > 0.05f) hgt = (10 + 34 * L.talk * fabsf(sinf(now / 90.0f + k * 1.3f))) * u;
+      else if (mood == M_HAPPY) off = -(9 - k * k) * 3.2f * u + 10 * u, hgt = 14 * u;
+      else if (L.sad) off = (9 - k * k) * 1.6f * u - 6 * u;
+      else if (cold) off = (k % 2 ? 6 : -6) * u;
+      else if (mood == M_TIRED) off = 0;
+      else off = -(9 - k * k) * 1.1f * u + 4 * u;   // leichtes Laecheln
+      gRRect(x - 7 * u, my + off - hgt / 2, 14 * u, hgt, 4 * u, led);
+    }
+  }
+  if (L.sweat && mood != M_SLEEPY) sweatDrop(cx + 150 * u, ey - 60 * u, 2.2f * u);
+  if (cold) shiverLines(cx, ey + 20 * u, 180 * u, 1.5f * u, led);
+  if (mood == M_SLEEPY && s > 0.6f) drawZ(cx + 60 * u, ey - 10 * u, s);
+}
+
 static void drawSkin(float cx, float cy, float s, int mood) {
   Look L = look;
   L.mood = mood;
@@ -644,6 +852,9 @@ static void drawSkin(float cx, float cy, float s, int mood) {
     case SK_DROP: skinDrop(cx, cy, s, L); break;
     case SK_PEBBLE: skinPebble(cx, cy, s, L); break;
     case SK_SOFT: skinSoft(cx, cy, s, L); break;
+    case SK_FACE: skinFace(cx, cy, s, L); break;
+    case SK_CAT: skinCat(cx, cy, s, L); break;
+    case SK_ROBOT: skinRobot(cx, cy, s, L); break;
     default: skinEyes(cx, cy, s, L);
   }
 }
@@ -994,6 +1205,7 @@ static void pageHome(int mood) {
     gText(F_SMALL, CX, 368, info[2], K_DIM, CENTER);
     return;
   }
+  faceBackground(mood);
   int list[MAX_HINTS], n = mood == M_SLEEPY ? 0 : activeHints(list);
   bool greeting = now < greetUntil;
   char said[96] = "";
@@ -1012,15 +1224,24 @@ static void pageHome(int mood) {
   lastBubbleLines = lines;
   look.talk = said[0] && now - talkStart < 1600 ? fabsf(sinf((now - talkStart) / 1000.0f * 11)) : 0;
   if (!said[0] && look.sad && calm(mood)) {
-    rainCloud(CX + 78 + dx, (cfg.skin == SK_SOFT ? 82 : 112) + dy);
+    rainCloud(CX + (fullFace(cfg.skin) ? 108 : 78) + dx, (cfg.skin == SK_SOFT || fullFace(cfg.skin) ? 74 : 112) + dy);
   }
   drawSkin(CX + dx, (lines > 1 ? 268 : lines ? 252 : 240) + dy, 1.15f, mood);
   look.talk = 0;
-  if (clockValid || testHours >= 0) {
+  // Uhrzeit; bei den Vollgesichtern nur kurz nach einer Beruehrung (das Gesicht fuellt alles aus)
+  float clockA = fullFace(cfg.skin) ? dotsVisible() : 1;
+  if ((clockValid || testHours >= 0) && clockA > 0) {
     float h = hoursNow();
     char tm[8];
     snprintf(tm, sizeof tm, "%02d:%02d", (int)h, (int)(h * 60) % 60);
-    gText(F_MED, CX, 368, tm, mood == M_SLEEPY ? K_DIMMER : K_DIM, CENTER);
+    gAlpha(clockA);
+    if (fullFace(cfg.skin)) {   // kleines Schild unten, damit es auf Fell und Gesicht lesbar ist
+      gRRect(CX - 52, 384, 104, 38, 19, C(0x101216));
+      gText(F_SMALL, CX, 390, tm, K_TEXT, CENTER);
+    } else {
+      gText(F_MED, CX, 368, tm, mood == M_SLEEPY ? K_DIMMER : K_DIM, CENTER);
+    }
+    gAlpha(1);
   }
   if (conn != CN_OK) {
     const char *s = conn == CN_AUTH ? "Token ung\xC3\xBCltig" : conn == CN_HA ? "Verbinde mit HA\xE2\x80\xA6"
@@ -1225,29 +1446,7 @@ void begin(uint16_t *fb, uint32_t seed) {
   info[0][0] = info[1][0] = info[2][0] = 0;
 }
 
-// Hintergrundfarbe je Stimmung (dunkel - nur ein Hauch Farbe am Rand)
-static float bgCol[3] = {0, 0, 0}, bgHome = 0;
 static int shiftX = 0, shiftY = 0;
-static uint32_t moodColor(int mood) {
-  if (look.sad && calm(mood)) return 0x1a2430;                                  // Regen: graublau
-  if (look.shades && (mood == M_NEUTRAL || mood == M_HAPPY)) return 0x3a2e08;   // Sonne: warmgelb
-  switch (mood) {
-    case M_HAPPY: return 0x3c2208;       // warmes Orange
-    case M_SLEEPY: return 0x0a1034;      // Nachtblau
-    case M_COLD: return 0x0a2444;        // Eisblau
-    case M_SURPRISED: return 0x30103a;   // Violett
-    case M_TIRED: return 0x221438;       // Abenddaemmerung
-    default: return 0x0a2a24;            // ruhiges Petrol
-  }
-}
-static void nightStars() {   // ein paar funkelnde Sterne im Rand, wenn er schlaeft
-  static const int16_t S[7][2] = {{74, 96}, {388, 120}, {58, 300}, {410, 330}, {140, 418}, {330, 426}, {232, 22}};
-  for (int i = 0; i < 7; i++) {
-    gAlpha(0.35f + 0.35f * sinf(now / 1300.0f + i * 1.7f));
-    gCircle(S[i][0], S[i][1], i % 3 ? 1.6f : 2.2f, C(0xc8d2ff));
-  }
-  gAlpha(1);
-}
 
 // Beruehrungen sofort auswerten, unabhaengig vom Bildaufbau (sonst gehen bei
 // langsamen Bildern Teile einer Wischbewegung verloren)
@@ -1320,18 +1519,7 @@ void tick(uint32_t nowMs, const Touch *pts, int n) {
   gazeX += (tx - gazeX) * 0.12f;
   gazeY += (ty - gazeY) * 0.12f;
 
-  // Hintergrund: sanftes Leuchten am Rand in der Farbe der Stimmung (nur auf der Startseite)
-  {
-    uint32_t want = moodColor(mood);
-    float home = page == 0 && !sliding ? 1.0f : 0.0f;
-    bgHome += (home - bgHome) * 0.08f;
-    for (int k = 0; k < 3; k++) {
-      float tgt = ((want >> (16 - 8 * k)) & 255) * bgHome;
-      bgCol[k] += (tgt - bgCol[k]) * 0.04f;   // weich ueberblenden
-    }
-    gRimBg(rgb565((int)bgCol[0], (int)bgCol[1], (int)bgCol[2]), 150, 236);
-    if (mood == M_SLEEPY && bgHome > 0.5f) nightStars();
-  }
+  gClear(K_BG);
   // Pixel-Shift: alles wandert langsam auf einem kleinen Kreis (gegen Einbrennen)
   float ph = (now / 1000.0f) / 480.0f * 2 * PI_F;   // eine Runde in 8 Minuten
   shiftX = (int)lroundf(cosf(ph) * 6);
