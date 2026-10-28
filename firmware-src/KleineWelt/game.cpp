@@ -1,13 +1,17 @@
-// Kleine Welt - zehn kleine Mallorca-Szenen als Wohlfuehl-Deko fuer die Wand.
+// Kleine Welt - Wohlfuehl-Deko fuer die Wand mit vier Welten:
+//   Mallorca: zehn kleine Szenen, die der echten Uhrzeit folgen (Sonnenauf- und -untergang
+//             je nach Monat, goldene Stunde, Nacht mit Mond, Sternen und Lichtern)
+//   Kunst:    Stroemung, Lavalampe, Sternenhimmel, Game of Life
+//   Aquarium: rundes Glas, Wasserlinie folgt dem Lagesensor, Antippen = fuettern
+//   Mond:     echte Mondphase, auch als Nachtlicht (Nachtmond)
 //
-// Alle 10 Minuten wechselt die Szene mit einer langsamen Ueberblendung (schont
-// nebenbei das AMOLED). Jede Szene folgt der echten Uhrzeit: Sonnenauf- und
-// -untergang je nach Monat, goldene Stunde, Nacht mit Mond, Sternen und Lichtern.
+// Alle paar Minuten (einstellbar) kommt das naechste Bild mit einer langsamen Ueberblendung
+// (schont nebenbei das AMOLED).
 //
-// Antippen (alles freiwillig):
-//   Boot -> legt am Steg an (wo es einen gibt) | Meer -> Fisch springt
-//   Himmel -> Vogel fliegt | Fenster -> Licht an/aus
-//   waagerecht wischen -> naechste/vorige Szene | lange halten -> Uhr stellen
+// Bedienung:
+//   waagerecht wischen -> naechstes/voriges Bild | senkrecht wischen -> naechste/vorige Welt
+//   lange halten -> Menue (Uhr, Wechsel, Welten, Nachtmond)
+//   Mallorca antippen: Boot -> legt am Steg an | Meer -> Fisch springt | Himmel -> Vogel | Fenster -> Licht
 //
 // Gezeichnet wird in 233x233 "Kunstpixeln", doppelt skaliert. Alle Grafik ist
 // eigene Pixelkunst bzw. wird im Code erzeugt.
@@ -87,6 +91,7 @@ static const uint8_t FONT[][5] = {
   {0x1F,0x20,0x40,0x20,0x1F},{0x3F,0x40,0x38,0x40,0x3F},{0x63,0x14,0x08,0x14,0x63},  // V W X
   {0x07,0x08,0x70,0x08,0x07},{0x61,0x51,0x49,0x45,0x43},                            // Y Z
   {0x3D,0x40,0x40,0x40,0x3D},{0x39,0x44,0x44,0x44,0x39},{0x7D,0x12,0x11,0x12,0x7D},  // Ü Ö Ä
+  {0x23,0x13,0x08,0x64,0x62},{0x20,0x10,0x08,0x04,0x02},                            // % /
 };
 static int glyphIndex(const char *&s) {
   unsigned char c = (unsigned char)*s++;
@@ -101,6 +106,7 @@ static int glyphIndex(const char *&s) {
   switch (c) {
     case ' ': return 0; case '!': return 1; case ',': return 2; case '-': return 3;
     case '.': return 4; case ':': return 5; case '=': return 6; case '?': return 7;
+    case '%': return 47; case '/': return 48;
   }
   if (c >= '0' && c <= '9') return 8 + (c - '0');
   if (c >= 'A' && c <= 'Z') return 18 + (c - 'A');
@@ -689,10 +695,11 @@ static void loadScene(int s) {
   initWorld();
 }
 
-// ---------------------------------------------------------------- Uhr stellen
-static bool clockUi = false;
+// ---------------------------------------------------------------- Menue-Zustand
+enum { UI_NONE, UI_MENU, UI_WELTEN, UI_CLOCK };
+static int ui = UI_NONE;
 static int setH = 12, setM = 0;
-static uint32_t clockUiIdleMs = 0;
+static uint32_t uiIdleMs = 0;
 static bool clockChanged = false;
 
 static void textC(const char *s, int cy, int sc, uint16_t c) {
@@ -701,11 +708,140 @@ static void textC(const char *s, int cy, int sc, uint16_t c) {
     if (dx || dy) textRaw(s, x + dx * 2, y + dy * 2, sc, K_OUT);
   textRaw(s, x, y, sc, c);
 }
+
+// ---------------------------------------------------------------- die anderen Welten
+#include "welten.h"
+
+// ---------------------------------------------------------------- Bilder und Welten
+// Bild-Nummern: 0..9 Mallorca, dann die vier Kunstbilder, Aquarium, Mond
+constexpr int B_KUNST = NSCENES, B_AQUA = NSCENES + NKUNST, B_MOND = B_AQUA + 1, NBILD = B_MOND + 1;
+static int bildWorld(int b) { return b < B_KUNST ? W_MALLORCA : (b < B_AQUA ? W_KUNST : (b == B_AQUA ? W_AQUARIUM : W_MOND)); }
+static const char *const WORLD_NAMES[W_COUNT] = {"MALLORCA", "KUNST", "AQUARIUM", "MOND"};
+static Settings cfg;
+static bool cfgDirty = false, cfgChanged = false;
+static int playlist[NBILD], nPlay = 0;
+static int forcedScene = -1;
+static bool nightOverride = false;   // nachts weggewischt: bis zum Morgen kein Nachtmond
+
+static void buildPlaylist() {
+  if (!(cfg.worlds & 0x0F)) cfg.worlds = 1 << W_MALLORCA;
+  nPlay = 0;
+  for (int b = 0; b < NBILD; b++) if (cfg.worlds >> bildWorld(b) & 1) playlist[nPlay++] = b;
+}
+static bool nightWindow() {
+  if (cfg.nightFrom < 0) return false;
+  float sr = SUNRISE[(month + 11) % 12];
+  return cfg.nightFrom >= 12 ? (hours >= cfg.nightFrom || hours < sr) : (hours >= cfg.nightFrom && hours < sr);
+}
+static bool nightMoon() { return nightWindow() && !nightOverride; }
+static int playSlot() { return cfg.interval ? (int)(hours * 60) / cfg.interval : 0; }
+static int playIndex() { return ((playSlot() + sceneOffset) % nPlay + nPlay) % nPlay; }
+static int wantBild() {
+  if (forcedScene >= 0) return forcedScene % NBILD;
+  if (nightMoon()) return B_MOND;
+  return playlist[playIndex()];
+}
+static void loadBild(int b) {
+  if (b < NSCENES) { loadScene(b); return; }
+  scene = b;
+  if (b == B_AQUA) initAquarium();
+  else if (b == B_MOND) initMoon();
+  else switch (b - B_KUNST) {
+    case K_FLOW: initFlow(); break;
+    case K_LAVA: initLava(); break;
+    case K_STARS: initStars(); break;
+    default: initLife(); break;
+  }
+}
+static void startFade(int to) {
+  memcpy(oldf, lf, L * L * 2);
+  loadBild(to);
+  fadeT = FADE;
+}
+static void showWant() { int w = wantBild(); if (w != scene) startFade(w); }
+
+// waagerecht: naechstes/voriges Bild
+static void swipeH(int dir) {
+  if (nightMoon()) nightOverride = true;
+  else sceneOffset += dir;
+  showWant();
+}
+// senkrecht: erstes Bild der naechsten/vorigen Welt
+static void swipeV(int dir) {
+  if (nightMoon()) { nightOverride = true; showWant(); return; }
+  int cur = playIndex(), cw = bildWorld(playlist[cur]), step = 0;
+  if (dir > 0) {
+    for (int k = 1; k < nPlay; k++) if (bildWorld(playlist[(cur + k) % nPlay]) != cw) { step = k; break; }
+  } else {
+    int pw = -1, k = 1;
+    for (; k < nPlay; k++) {
+      int w = bildWorld(playlist[((cur - k) % nPlay + nPlay) % nPlay]);
+      if (pw < 0) { if (w != cw) pw = w; }
+      else if (w != pw) break;
+    }
+    step = pw < 0 ? 0 : -(k - 1);
+  }
+  sceneOffset += step;
+  showWant();
+}
+
+// ---------------------------------------------------------------- Menue zeichnen
+static const int ROWY[4] = {170, 222, 274, 326};
+static void dimScreen() { for (int i = 0; i < SCR * SCR; i++) fb[i] = mix(fb[i], 0, 0.62f); }
+static void rowBox(int cy) { rect(53, cy - 22, 360, 44, C(0x1c2633)); rect(53, cy - 22, 4, 44, C(0x2fa39a)); }
+static void button(const char *s) { rect(158, 362, 150, 42, C(0x2fa39a)); textC(s, 383, 3, C(0x0b1a18)); }
+static void drawMenu() {
+  dimScreen();
+  textC("EINSTELLUNGEN", 112, 3, C(0xffd77a));
+  char buf[32];
+  const uint16_t W = C(0xfff8ee);
+  rowBox(ROWY[0]); snprintf(buf, sizeof buf, "UHR %02d:%02d", (int)hours % 24, (int)(hours * 60) % 60); textC(buf, ROWY[0], 3, W);
+  rowBox(ROWY[1]);
+  if (!cfg.interval) snprintf(buf, sizeof buf, "WECHSEL: AUS");
+  else if (cfg.interval == 60) snprintf(buf, sizeof buf, "WECHSEL: 1 STUNDE");
+  else snprintf(buf, sizeof buf, "WECHSEL: %d MIN", cfg.interval);
+  textC(buf, ROWY[1], 3, W);
+  int nw = 0; for (int w = 0; w < W_COUNT; w++) nw += cfg.worlds >> w & 1;
+  rowBox(ROWY[2]);
+  if (nw == W_COUNT) snprintf(buf, sizeof buf, "WELTEN: ALLE");
+  else if (nw == 1) { int w = 0; while (!(cfg.worlds >> w & 1)) w++; snprintf(buf, sizeof buf, "WELT: %s", WORLD_NAMES[w]); }
+  else snprintf(buf, sizeof buf, "WELTEN: %d VON %d", nw, W_COUNT);
+  textC(buf, ROWY[2], 3, W);
+  rowBox(ROWY[3]);
+  if (cfg.nightFrom < 0) snprintf(buf, sizeof buf, "NACHTMOND: AUS");
+  else snprintf(buf, sizeof buf, "NACHTMOND AB %d UHR", cfg.nightFrom);
+  textC(buf, ROWY[3], 3, W);
+  button("FERTIG");
+}
+static void drawWelten() {
+  dimScreen();
+  textC("WELTEN", 112, 3, C(0xffd77a));
+  char buf[32];
+  for (int w = 0; w < W_COUNT; w++) {
+    bool on = cfg.worlds >> w & 1;
+    rowBox(ROWY[w]);
+    snprintf(buf, sizeof buf, "%s: %s", WORLD_NAMES[w], on ? "AN" : "AUS");
+    textC(buf, ROWY[w], 3, on ? C(0xfff8ee) : C(0x8a8a96));
+  }
+  button("ZURÜCK");
+}
+static int menuRow(int x, int y) {
+  if (y > 356 && y < 412 && x > 150 && x < 316) return 4;
+  if (x < 45 || x > 421) return -1;
+  for (int r = 0; r < 4; r++) if (abs(y - ROWY[r]) <= 24) return r;
+  return -1;
+}
+static void closeMenu() {
+  ui = UI_NONE;
+  if (cfgDirty) { cfgDirty = false; cfgChanged = true; }
+}
+
+// ---------------------------------------------------------------- Uhr stellen
 static void arrow(int cx, int cy, bool upw, uint16_t c) {
   for (int j = 0; j < 14; j++) { int w = upw ? j : 13 - j; rect(cx - w * 2, cy - 14 + j * 2, w * 4 + 2, 2, c); }
 }
 static void drawClockUi() {
-  for (int i = 0; i < SCR * SCR; i++) fb[i] = mix(fb[i], 0, 0.62f);
+  dimScreen();
   char buf[8]; snprintf(buf, sizeof buf, "%02d:%02d", setH, setM);
   textC("UHR STELLEN", 128, 3, C(0xffd77a));
   textC(buf, 233, 9, C(0xfff8ee));
@@ -721,15 +857,31 @@ static int clockZone(int x, int y) {
   return left ? (upper ? 1 : 2) : (upper ? 3 : 4);
 }
 static void clockStep(int zone) {
-  clockUiIdleMs = 0;
+  uiIdleMs = 0;
   if (zone == 1) setH = (setH + 1) % 24;
   else if (zone == 2) setH = (setH + 23) % 24;
   else if (zone == 3) setM = (setM + 1) % 60;
   else if (zone == 4) setM = (setM + 59) % 60;
 }
 static void clockOk() {
-  clockUi = false; clockChanged = true;
+  ui = UI_MENU; uiIdleMs = 0; clockChanged = true;
   hours = setH + setM / 60.0f; clockSetHours = hours; clockSetMs = 0;
+}
+static void menuTap(int x, int y) {
+  uiIdleMs = 0;
+  int r = menuRow(x, y);
+  if (r < 0) return;
+  if (ui == UI_MENU) {
+    if (r == 0) { ui = UI_CLOCK; setH = (int)hours % 24; setM = (int)(hours * 60) % 60; }
+    else if (r == 1) { static const uint8_t IV[4] = {10, 30, 60, 0}; int k = 0; while (k < 4 && IV[k] != cfg.interval) k++; cfg.interval = IV[(k + 1) % 4]; cfgDirty = true; }
+    else if (r == 2) ui = UI_WELTEN;
+    else if (r == 3) { static const int8_t NF[5] = {-1, 21, 22, 23, 0}; int k = 0; while (k < 5 && NF[k] != cfg.nightFrom) k++; cfg.nightFrom = NF[(k + 1) % 5]; nightOverride = false; cfgDirty = true; }
+    else closeMenu();
+  } else if (ui == UI_WELTEN) {
+    if (r == 4) { ui = UI_MENU; return; }
+    uint8_t w = cfg.worlds ^ (1 << r);
+    if (w & 0x0F) { cfg.worlds = w; cfgDirty = true; buildPlaylist(); }
+  }
 }
 
 // ---------------------------------------------------------------- Eingabe
@@ -741,14 +893,16 @@ static uint32_t lastMs = 0;
 static uint32_t nextRepeat = 0;
 static int heldZone = 0;
 
-static void startFade(int to) {
-  memcpy(oldf, lf, L * L * 2);
-  loadScene(to);
-  fadeT = FADE;
-}
 static void handleTap(int sx, int sy) {
   int x = sx / 2, y = sy / 2;
   if ((unsigned)x >= (unsigned)L || (unsigned)y >= (unsigned)L) return;
+  switch (bildWorld(scene)) {
+    case W_KUNST:
+      switch (scene - B_KUNST) { case K_FLOW: tapFlow(x, y); break; case K_LAVA: tapLava(x, y); break; case K_STARS: tapStars(x, y); break; default: tapLife(x, y); }
+      return;
+    case W_AQUARIUM: tapAquarium(x, y); return;
+    case W_MOND: tapMoon(); return;
+  }
   for (int k = 0; k < nBoats; k++) {
     Boat &b = boats[k]; int w, h; boatSize(b.kind, w, h);
     if (fabsf(x - b.x) < w / 2 + 6 && y > b.y - h - 4 && y < b.y + 6) {
@@ -771,38 +925,38 @@ static void handleTap(int sx, int sy) {
 static void input(uint32_t now, const Touch *pts, int n) {
   bool down = n > 0;
   int x = down ? pts[0].x : lastX, y = down ? pts[0].y : lastY;
-  bool pressStartedInMenu = false;
+  bool pressStartedInClock = false;
   if (down && !wasDown) {
-    downMs = now; downX = x; downY = y; longFired = false;
-    if (clockUi) {
-      pressStartedInMenu = true;
+    downMs = now; downX = x; downY = y; longFired = false; heldZone = 0;
+    if (ui == UI_CLOCK) {
+      pressStartedInClock = true;
       heldZone = clockZone(x, y);
       if (heldZone) { clockStep(heldZone); nextRepeat = now + 450; }
     }
   }
   if (down) { lastX = x; lastY = y; }
-  if (clockUi && down && heldZone && !pressStartedInMenu && now >= nextRepeat) {
+  if (ui == UI_CLOCK && down && heldZone && !pressStartedInClock && now >= nextRepeat) {
     clockStep(heldZone);
     uint32_t held = now - downMs;
     nextRepeat = now + (held > 2500 ? 40 : (held > 1200 ? 90 : 160));
   }
-  if (down && !longFired && !clockUi && now - downMs > 1500) {
+  if (down && !longFired && ui == UI_NONE && now - downMs > 1500) {
     int dx = x - downX, dy = y - downY;
-    if (dx * dx + dy * dy < 30 * 30) {
-      longFired = true; clockUi = true; clockUiIdleMs = 0; heldZone = 0;
-      setH = (int)hours % 24; setM = (int)(hours * 60) % 60;
-    }
+    if (dx * dx + dy * dy < 30 * 30) { longFired = true; ui = UI_MENU; uiIdleMs = 0; }
   }
   if (!down && wasDown && !longFired) {
     int dx = lastX - downX, dy = lastY - downY;
-    if (clockUi) {
+    bool tap = now - downMs < 600 && dx * dx + dy * dy < 30 * 30;
+    if (ui == UI_CLOCK) {
       if (!heldZone && downY > 350 && downX > 180 && downX < 286) clockOk();
       heldZone = 0;
+    } else if (ui != UI_NONE) {
+      if (tap) menuTap(downX, downY);
     } else if (abs(dx) > 90 && abs(dx) > 2 * abs(dy) && now - downMs < 1000) {
-      sceneOffset += dx < 0 ? 1 : -1;            // nach links wischen = naechste Szene
-      int want = ((((int)(hours * 6)) + sceneOffset) % NSCENES + NSCENES) % NSCENES;
-      if (want != scene) startFade(want);
-    } else if (now - downMs < 600 && dx * dx + dy * dy < 30 * 30) handleTap(downX, downY);
+      swipeH(dx < 0 ? 1 : -1);                   // nach links wischen = naechstes Bild
+    } else if (abs(dy) > 90 && abs(dy) > 2 * abs(dx) && now - downMs < 1000) {
+      swipeV(dy < 0 ? 1 : -1);                   // nach oben wischen = naechste Welt
+    } else if (tap) handleTap(downX, downY);
   }
   wasDown = down;
 }
@@ -816,41 +970,52 @@ void begin(uint16_t *fbuf, uint16_t *work, uint32_t seed) {
   base = (uint16_t *)w; w += L * L * 2;
   lf = (uint16_t *)w; w += L * L * 2;
   oldf = (uint16_t *)w; w += L * L * 2;
+  w += (4 - ((uintptr_t)w & 3)) & 3;   // mat dient der Lavalampe als float-Feld: ausrichten
   mat = w;
   lastMs = 0; scene = -1; sceneOffset = 0; fadeT = 0;
+  buildPlaylist();
 }
 void setClock(int h, int m, int s, int mon) {
   if (testHours >= 0) return;
   clockSetHours = h + m / 60.0f + s / 3600.0f; clockSetMs = lastMs;
   if (mon >= 1 && mon <= 12) month = mon;
 }
+void setDate(int y, int mo, int d) {
+  if (y < 2000 || y > 2200 || mo < 1 || mo > 12 || d < 1 || d > 31) return;
+  dateY = y; dateM = mo; dateD = d;
+}
+void setGravity(float gx, float gy) { gravX = gx; gravY = gy; }
+void setSettings(const Settings &s) {
+  cfg = s;
+  if (cfg.interval != 10 && cfg.interval != 30 && cfg.interval != 60 && cfg.interval != 0) cfg.interval = 10;
+  if (cfg.nightFrom != -1 && cfg.nightFrom != 21 && cfg.nightFrom != 22 && cfg.nightFrom != 23 && cfg.nightFrom != 0) cfg.nightFrom = -1;
+  buildPlaylist();
+}
+const Settings &settings() { return cfg; }
+bool takeSettingsChange(Settings &s) { if (!cfgChanged) return false; cfgChanged = false; s = cfg; return true; }
 void testSetHours(float h, int mon) { testHours = h; if (h >= 0) hours = h; if (mon >= 1 && mon <= 12) month = mon; }
-static int forcedScene = -1;
 void testSetScene(int s) { forcedScene = s; }
-int sceneCount() { return NSCENES; }
-const char *sceneName(int s) { return (s >= 0 && s < NSCENES) ? SCENES[s].name : ""; }
+int sceneCount() { return NBILD; }
+const char *sceneName(int s) {
+  if (s >= 0 && s < NSCENES) return SCENES[s].name;
+  if (s >= B_KUNST && s < B_AQUA) return KUNST_NAMES[s - B_KUNST];
+  if (s == B_AQUA) return "AQUARIUM";
+  if (s == B_MOND) return "MOND";
+  return "";
+}
+int sceneWorld(int s) { return bildWorld(s); }
 bool takeClockChange(int &h, int &m) { if (!clockChanged) return false; clockChanged = false; h = setH; m = setM; return true; }
 uint8_t wantBrightness() { return bright; }
+void testMoon(int y, int mo, int d, float h, float &frac, float &toFull, float &toNew) {
+  MoonState s = calcMoon(y, mo, d, h); frac = s.frac; toFull = s.toFull; toNew = s.toNew;
+}
+bool testFishPos(int k, int &x, int &y) {
+  if (scene != B_AQUA || k < 0 || k >= nAfish) return false;
+  x = (int)(afish[k].x * 2); y = (int)(afish[k].y * 2); return true;
+}
 
-void tick(uint32_t now, const Touch *pts, int n) {
-  if (!lastMs) { lastMs = now; clockSetMs = now; }
-  float dt = (now - lastMs) / 1000.0f; lastMs = now;
-  if (dt > 0.1f) dt = 0.1f;
-  t_ += dt;
-  if (testHours >= 0) hours = testHours;
-  else { hours = clockSetHours + (now - clockSetMs) / 3600000.0f; while (hours >= 24) hours -= 24; }
-
-  // welche Szene? alle 10 Minuten die naechste (plus Wischen)
-  int want = forcedScene >= 0 ? forcedScene % NSCENES : ((((int)(hours * 6)) + sceneOffset) % NSCENES + NSCENES) % NSCENES;
-  if (scene < 0) loadScene(want);
-  else if (want != scene && fadeT <= 0) startFade(want);
-
-  input(now, pts, n);
-  if (clockUi) { clockUiIdleMs += (uint32_t)(dt * 1000); if (clockUiIdleMs > 20000) clockUi = false; }
-
-  computeLight();
+static void renderMallorca(float dt) {
   updateLife(dt);
-
   for (int y = 0; y < HOR && y < L; y++) {
     float v = (float)y / HOR;
     uint32_t c = v < 0.55f ? lerpRGB(light.skyTop, light.skyMid, v / 0.55f) : lerpRGB(light.skyMid, light.skyHor, (v - 0.55f) / 0.45f);
@@ -879,7 +1044,36 @@ void tick(uint32_t now, const Touch *pts, int n) {
   drawGulls();
   drawNightLights();
   if (SCENES[scene].glow) SCENES[scene].glow(nightK());
-  // Ueberblendung von der vorigen Szene
+}
+
+void tick(uint32_t now, const Touch *pts, int n) {
+  if (!lastMs) { lastMs = now; clockSetMs = now; }
+  float dt = (now - lastMs) / 1000.0f; lastMs = now;
+  if (dt > 0.1f) dt = 0.1f;
+  t_ += dt;
+  if (testHours >= 0) hours = testHours;
+  else { hours = clockSetHours + (now - clockSetMs) / 3600000.0f; while (hours >= 24) hours -= 24; }
+  computeLight();
+  if (!nightWindow()) nightOverride = false;
+
+  // welches Bild? alle paar Minuten das naechste (plus Wischen), nachts ggf. der Mond
+  int want = wantBild();
+  if (scene < 0) loadBild(want);
+  else if (want != scene && fadeT <= 0) startFade(want);
+
+  input(now, pts, n);
+  if (ui != UI_NONE) { uiIdleMs += (uint32_t)(dt * 1000); if (uiIdleMs > 20000) closeMenu(); }
+
+  int world = bildWorld(scene);
+  switch (world) {
+    case W_MALLORCA: renderMallorca(dt); break;
+    case W_KUNST:
+      switch (scene - B_KUNST) { case K_FLOW: renderFlow(dt); break; case K_LAVA: renderLava(dt); break; case K_STARS: renderStars(dt); break; default: renderLife(dt); }
+      break;
+    case W_AQUARIUM: renderAquarium(dt); break;
+    default: renderMoon(dt, nightMoon()); break;
+  }
+  // Ueberblendung vom vorigen Bild
   if (fadeT > 0) {
     fadeT -= dt;
     float p = clampf(1 - fadeT / FADE, 0, 1); p = p * p * (3 - 2 * p);
@@ -891,20 +1085,39 @@ void tick(uint32_t now, const Touch *pts, int n) {
     for (int x = 0; x < L; x++) { d[2 * x] = d[2 * x + 1] = src[x]; }
     if (y + 1 < SCR) memcpy(d + SCR, d, SCR * 2);
   }
-  if (clockUi) drawClockUi();
-  else if (t_ < 8) {
-    float k = t_ < 6 ? 1 : (8 - t_) / 2;
-    textC("WISCHEN = NÄCHSTES BILD", 288, 2, mix(C(0x404040), C(0xfff8ee), k));
-    textC("LANGE DRÜCKEN = UHR", 312, 2, mix(C(0x404040), C(0xfff8ee), k));
+  if (ui == UI_CLOCK) drawClockUi();
+  else if (ui == UI_MENU) drawMenu();
+  else if (ui == UI_WELTEN) drawWelten();
+  else {
+    if (world == W_MOND && fadeT <= 0) moonOverlay();
+    if (t_ < 8) {
+      float k = t_ < 6 ? 1 : (8 - t_) / 2;
+      uint16_t c = mix(C(0x404040), C(0xfff8ee), k);
+      textC("WISCHEN = NÄCHSTES BILD", 284, 2, c);
+      textC("HOCH/RUNTER = WELT", 308, 2, c);
+      textC("LANGE DRÜCKEN = MENÜ", 332, 2, c);
+    }
   }
-  bright = (uint8_t)(60 + 100 * light.day);
+  switch (world) {
+    case W_MALLORCA: bright = (uint8_t)(60 + 100 * light.day); break;
+    case W_KUNST: bright = (uint8_t)(70 + 60 * light.day); break;
+    case W_AQUARIUM: bright = (uint8_t)(45 + 105 * light.day); break;
+    default: bright = nightMoon() ? 30 : 110; break;
+  }
 }
 
 Debug debug() {
   Debug d; memset(&d, 0, sizeof d);
-  d.hours = hours; d.daylight = light.day; d.clockUi = clockUi; d.lightsOn = lightsOn() && windowsOn;
-  d.scene = scene; d.fading = fadeT > 0; d.nBoats = nBoats;
+  d.hours = hours; d.daylight = light.day; d.clockUi = ui == UI_CLOCK; d.ui = ui; d.lightsOn = lightsOn() && windowsOn;
+  d.scene = scene; d.world = scene >= 0 ? bildWorld(scene) : 0; d.fading = fadeT > 0; d.nBoats = nBoats;
   for (int k = 0; k < nBoats && k < 5; k++) { d.boatState[k] = boats[k].state; d.boatX[k] = boats[k].x; d.boatY[k] = boats[k].y; if (boats[k].state == 2) d.boatsDocked++; }
+  d.nightMoon = nightMoon();
+  d.moonFrac = moon.frac; d.moonToFull = moon.toFull; d.moonToNew = moon.toNew;
+  for (auto &f : flakes) if (f.on) d.nFood++;
+  d.foodEaten = flakesEaten; d.nFish = nAfish;
+  float a = waterA; while (a > 3.1416f) a -= 6.2832f; while (a < -3.1416f) a += 6.2832f;
+  d.waterAngle = a;
+  d.population = lifePop;
   return d;
 }
 

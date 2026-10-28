@@ -2,16 +2,26 @@
 
 Zwei Firmwares für das **Waveshare ESP32-S3-Touch-AMOLED-1.75**, auswählbar auf der Installer-Seite:
 
-- **Mallorca-Deko** (`firmware-src/KleineWelt`) – siehe unten.
+- **Deko-Welten** (`firmware-src/KleineWelt`) – Mallorca, Kunst, Aquarium und Mond, siehe unten.
 - **Kumpel** (`firmware-src/Kumpel`) – ein Kumpel mit Gefühlen (Figur wählbar: Leuchtaugen,
   Tröpfchen, Kiesel) und selbst zusammengestellten Home-Assistant-Seiten zum Wischen.
 
-## Mallorca-Deko
+## Deko-Welten
 
-Wohlfühl-Deko für das **Waveshare ESP32-S3-Touch-AMOLED-1.75** (466×466 rundes AMOLED):
-zehn kleine Mallorca-Szenen (Cala, Felsbucht, Fischerhafen, Olivenfinca, Bergdorf, Steilküste,
-Windmühlen, Palma, Strandbar, Felsentor), die alle 10 Minuten überblenden. Jede folgt der echten
-Uhrzeit aus der eingebauten Uhr. Wischen = nächste Szene, lange drücken = Uhr stellen.
+Wohlfühl-Deko für das **Waveshare ESP32-S3-Touch-AMOLED-1.75** (466×466 rundes AMOLED) mit vier Welten:
+
+- **Mallorca** – zehn kleine Szenen (Cala, Felsbucht, Fischerhafen, Olivenfinca, Bergdorf, Steilküste,
+  Windmühlen, Palma, Strandbar, Felsentor). Jede folgt der echten Uhrzeit aus der eingebauten Uhr.
+- **Kunst** – Strömung (Teilchen im Wirbelfeld), Lavalampe, Sternenhimmel (dreht sich um den Polarstern),
+  Game of Life auf rundem Feld.
+- **Aquarium** – das runde Display ist das Glas; die Wasserlinie folgt dem Lagesensor und schwappt nach.
+  Antippen streut Futter. Tagsüber Licht, nachts gedämpft.
+- **Mond** – echte Mondphase aus Datum und Uhrzeit (Meeus, gegen PyEphem geprüft), Antippen zeigt Phase und
+  Tage bis Voll-/Neumond. Optional als **Nachtmond**: ab einer wählbaren Stunde bis Sonnenaufgang, gedimmt.
+
+Alle 10 Minuten (einstellbar) blendet das nächste Bild über. Waagerecht wischen = nächstes Bild,
+hoch/runter wischen = nächste Welt, lange drücken = Menü (Uhr, Wechsel, Welten, Nachtmond).
+Die Menü-Einstellungen liegen im eigenen NVS-Namensraum `welt`.
 
 Der frühere Zelda-artige Prototyp liegt im Branch `zelda-prototyp`.
 
@@ -21,17 +31,18 @@ Installer-Seite (GitHub Pages) in Chrome/Edge öffnen, Board per USB-C anschlie�
 *Installieren* → bei **„Erase device“ nichts anhaken**.
 
 TamaPoke-Spielstand (NVS) und Ruhmeshalle (FFat) bleiben dabei erhalten: Kleine Welt
-nutzt dieselbe Partitionstabelle und schreibt keinen dieser Bereiche. `tools/make_manifest.py`
+nutzt dieselbe Partitionstabelle und schreibt keinen dieser Bereiche (nur den eigenen NVS-Namensraum `welt`). `tools/make_manifest.py`
 bricht ab, falls sich die Partitionstabelle je ändern sollte.
 
 ## Aufbau
 
 | Pfad | Inhalt |
 |---|---|
-| `firmware-src/KleineWelt/game.cpp` | Kern (ohne Arduino-Abhängigkeit): Tageslicht, Himmel, Boote, Wechsel, Eingabe |
-| `firmware-src/KleineWelt/scenes.h` | die zehn Szenen (Bauplan + Animationen) |
-| `firmware-src/KleineWelt/KleineWelt.ino` | Board: Display (CO5300/QSPI), Touch (CST9217), RTC (PCF85063), AXP2101, Helligkeit |
-| `host/sim.cpp` | PC-Test: rendert jede Szene zu drei Tageszeiten, prüft Wechsel, Wischen, Tippen, Uhr |
+| `firmware-src/KleineWelt/game.cpp` | Kern (ohne Arduino-Abhängigkeit): Tageslicht, Himmel, Boote, Wechsel, Welten, Menü, Eingabe |
+| `firmware-src/KleineWelt/scenes.h` | die zehn Mallorca-Szenen (Bauplan + Animationen) |
+| `firmware-src/KleineWelt/welten.h` | Kunst, Aquarium, Mond (inkl. Mondphasen-Rechnung) |
+| `firmware-src/KleineWelt/KleineWelt.ino` | Board: Display (CO5300/QSPI), Touch (CST9217), RTC (PCF85063), Lagesensor (QMI8658), AXP2101, Helligkeit, Einstellungen |
+| `host/sim.cpp` | PC-Test: rendert jedes Bild, prüft Wechsel, Wischen, Menü, Uhr, Nachtmond, Mondphase, Aquarium, Tippen |
 | `tools/make_manifest.py` | erzeugt `manifest.json`, prüft Partitionstabelle |
 | `.github/workflows/firmware.yml` | Cloud-Build bei jeder Änderung am Quellcode |
 

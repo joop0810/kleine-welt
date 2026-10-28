@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Kleine Welt – Installer</title>
-  <meta name="description" content="Kleine Welt (Mallorca-Deko) oder Kumpel (Home-Assistant-Kumpel) auf das Waveshare ESP32-S3-Touch-AMOLED-1.75 flashen – direkt im Browser.">
+  <meta name="description" content="Kleine Welt (Deko-Welten: Mallorca, Kunst, Aquarium, Mond) oder Kumpel (Home-Assistant-Kumpel) auf das Waveshare ESP32-S3-Touch-AMOLED-1.75 flashen – direkt im Browser.">
   <style>
     :root {
       --bg: #120e18; --panel: #1d1726; --line: #2e2540; --text: #efe8f5; --muted: #a99fb8;
@@ -42,10 +42,15 @@
     td:first-child { color: var(--warm); white-space: nowrap; padding-right: 16px; font-weight: 600; }
     tr:last-child td { border-bottom: 0; }
     .k td:first-child { color: var(--mint); }
+    .worlds { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 4px 0 6px; }
+    .world { text-align: center; font-size: .9rem; color: var(--muted); }
+    .world img { width: 100%; max-width: 128px; aspect-ratio: 1; border-radius: 50%; display: block; margin: 0 auto 8px;
+      image-rendering: pixelated; box-shadow: 0 0 0 4px #000, 0 0 0 5px var(--line); }
+    .world b { display: block; color: var(--text); font-size: 1rem; }
     code { background: #0d0a12; padding: 1px 6px; border-radius: 5px; }
     footer { color: var(--muted); font-size: .85rem; margin-top: 32px; }
     a { color: var(--teal); }
-    @media (max-width: 600px) { .pick { grid-template-columns: 1fr; } td:first-child { white-space: normal; } }
+    @media (max-width: 600px) { .pick { grid-template-columns: 1fr; } .worlds { grid-template-columns: 1fr 1fr; } td:first-child { white-space: normal; } }
   </style>
 </head>
 <body>
@@ -57,10 +62,10 @@
   <div class="pick">
     <div class="card">
       <div class="orb"><img src="docs/vorschau.png" alt="Palma mit Kathedrale am Abend"></div>
-      <h2>Mallorca-Deko</h2>
-      <p>Zehn kleine Mallorca-Szenen für die Wand – mit echtem Tageslauf, Booten, Windmühlen und Sonnenuntergang. Ganz ohne WLAN.</p>
+      <h2>Deko-Welten</h2>
+      <p>Vier Welten für die Wand: Mallorca mit echtem Tageslauf, bewegte Kunst, ein Aquarium zum Kippen und Füttern und der Mond mit seiner echten Phase. Ganz ohne WLAN.</p>
       <esp-web-install-button manifest="manifest.json" data-v="v-welt">
-        <button class="go" slot="activate">Mallorca installieren</button>
+        <button class="go" slot="activate">Deko installieren</button>
         <span slot="unsupported">Dieser Browser kann kein Web Serial. Bitte Chrome oder Edge am Computer verwenden.</span>
         <span slot="not-allowed">Web Serial braucht eine sichere Verbindung (https).</span>
       </esp-web-install-button>
@@ -93,7 +98,7 @@
   <section class="warn">
     <h2>Spielstände und Einstellungen bleiben erhalten</h2>
     <p>Beide Firmwares ersetzen nur das Programm. TamaPokes Spielstand und die Ruhmeshalle liegen in eigenen Speicherbereichen, die hier weder gelesen noch beschrieben werden – <strong>solange „Erase device“ nicht angehakt ist</strong>. Ein Haken dort löscht alles unwiderruflich, auch die Kumpel-Einstellungen.</p>
-    <p class="note">Der Kumpel speichert WLAN, Home-Assistant-Zugang und Seiten in seinem eigenen Bereich. Wer zwischendurch die Mallorca-Deko oder TamaPoke flasht und später zurückwechselt, findet alles wieder vor.</p>
+    <p class="note">Der Kumpel speichert WLAN, Home-Assistant-Zugang und Seiten in seinem eigenen Bereich, die Deko-Welten ihre Menü-Einstellungen ebenso. Wer zwischendurch wechselt und später zurückkommt, findet alles wieder vor.</p>
   </section>
 
   <section>
@@ -118,18 +123,30 @@
   </section>
 
   <section>
-    <h2>Mallorca-Deko: zehn Szenen</h2>
-    <p class="note" style="margin-top:0">Die Cala · Felsbucht · Fischerhafen · Olivenfinca · Bergdorf · Steilküste · Windmühlen · Palma · Strandbar · Felsentor. Alle 10 Minuten blendet die nächste Szene sanft über – das sieht lebendig aus und schont das AMOLED vor Einbrennen.</p>
+    <h2>Deko-Welten</h2>
+    <div class="worlds">
+      <div class="world"><img src="docs/vorschau.png" alt="Mallorca"><b>Mallorca</b>zehn Szenen</div>
+      <div class="world"><img src="docs/welt_kunst.png" alt="Lavalampe"><b>Kunst</b>Strömung, Lavalampe, Sternenhimmel, Game of Life</div>
+      <div class="world"><img src="docs/welt_aquarium.png" alt="Aquarium"><b>Aquarium</b>Wasser schwappt beim Kippen</div>
+      <div class="world"><img src="docs/welt_mond.png" alt="Mond"><b>Mond</b>echte Mondphase</div>
+    </div>
+    <p class="note">Alle 10 Minuten blendet das nächste Bild sanft über – das sieht lebendig aus und schont das AMOLED vor Einbrennen. Im Menü lässt sich einstellen, welche Welten mitlaufen, wie oft gewechselt wird und ob nachts der Mond als Nachtlicht kommt.</p>
+    <h2 style="margin-top:18px">Bedienung</h2>
+    <table>
+      <tr><td>Waagerecht wischen</td><td>nächstes bzw. voriges Bild</td></tr>
+      <tr><td>Hoch/runter wischen</td><td>nächste bzw. vorige Welt</td></tr>
+      <tr><td>Lange drücken</td><td>Menü: Uhr stellen, Wechsel (10/30/60 Minuten oder aus), Welten an/aus, Nachtmond (ab 21, 22, 23 oder 0 Uhr bis Sonnenaufgang)</td></tr>
+    </table>
     <h2 style="margin-top:18px">Antippen (alles freiwillig)</h2>
     <table>
-      <tr><td>Waagerecht wischen</td><td>nächste bzw. vorige Szene</td></tr>
-      <tr><td>Boot</td><td>legt am Steg an, wo es einen gibt (nochmal tippen: legt ab)</td></tr>
-      <tr><td>Meer</td><td>ein Fisch springt</td></tr>
-      <tr><td>Himmel</td><td>ein Vogel fliegt los</td></tr>
-      <tr><td>Fenster</td><td>Licht an/aus (abends)</td></tr>
-      <tr><td>Lange drücken</td><td>Uhr stellen: Pfeile tippen (1er-Schritte) oder gedrückt halten (zählt schnell), dann OK</td></tr>
+      <tr><td>Mallorca: Boot</td><td>legt am Steg an, wo es einen gibt (nochmal tippen: legt ab)</td></tr>
+      <tr><td>Mallorca: Meer / Himmel</td><td>ein Fisch springt / ein Vogel fliegt los</td></tr>
+      <tr><td>Mallorca: Fenster</td><td>Licht an/aus (abends)</td></tr>
+      <tr><td>Kunst</td><td>Strömung: Wirbel · Lavalampe: Klumpen wird heiß · Sternenhimmel: Sternschnuppe · Game of Life: neues Leben säen</td></tr>
+      <tr><td>Aquarium</td><td>Futter streuen – die Fische holen es sich. Einen Fisch antippen: er erschrickt</td></tr>
+      <tr><td>Mond</td><td>Phase, Beleuchtung und Tage bis Voll- bzw. Neumond</td></tr>
     </table>
-    <p class="note">Jede Szene folgt der echten Uhrzeit: Sonnenauf- und -untergang je nach Monat, goldene Stunde, nachts Mond, Sterne, Fensterlicht und Laternen. Im Februar und März blühen die Mandelbäume. Die Helligkeit wird nachts gedimmt.</p>
+    <p class="note">Mallorca folgt der echten Uhrzeit: Sonnenauf- und -untergang je nach Monat, goldene Stunde, nachts Mond, Sterne, Fensterlicht und Laternen. Im Februar und März blühen die Mandelbäume. Das Aquarium hat tagsüber Licht und nachts gedämpftes Blau. Der Mond wird aus Datum und Uhrzeit berechnet. Die Helligkeit wird nachts gedimmt.</p>
     <p class="note">Die Uhrzeit kommt aus der eingebauten Uhr des Boards – dieselbe, die TamaPoke benutzt. Stellst du sie hier, gilt sie auch für TamaPoke. Der Kumpel stellt sie automatisch aus dem Internet.</p>
   </section>
 

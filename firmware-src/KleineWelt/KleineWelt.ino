@@ -1,15 +1,16 @@
-// Kleine Welt - zehn Mallorca-Szenen als Wohlfuehl-Deko fuer die Wand (Wechsel alle 10 Minuten)
+// Kleine Welt - Wohlfuehl-Deko fuer die Wand: Mallorca, Kunst, Aquarium und Mond
 // Board: Waveshare ESP32-S3-Touch-AMOLED-1.75 (466x466 AMOLED, CO5300 QSPI, Touch CST9217)
 //
 // Bibliotheken (gleiche Versionen wie TamaPoke):
 //   GFX Library for Arduino 1.6.7, SensorLib 0.4.1, XPowersLib 0.3.3
 // FQBN: esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashSize=16M,PSRAM=opi,PartitionScheme=app3M_fat9M_16MB
 //
-// WICHTIG - Nachbarschaft mit TamaPoke:
-// Diese Firmware schreibt NICHTS in den NVS-Speicher und bindet die FFat-Partition
-// nicht ein. TamaPokes Spielstand (NVS) und Ruhmeshalle (FFat) bleiben unberuehrt,
-// solange beim Flashen "Erase device" nicht angehakt ist. Die Partitionstabelle ist
-// dieselbe wie bei TamaPoke (app3M_fat9M_16MB) - bitte nicht aendern.
+// WICHTIG - Nachbarschaft mit TamaPoke und Kumpel:
+// Diese Firmware speichert nur ihre Menue-Einstellungen im eigenen NVS-Namensraum "welt"
+// und bindet die FFat-Partition nicht ein. TamaPokes Spielstand (NVS) und Ruhmeshalle (FFat)
+// sowie die Kumpel-Einstellungen (Namensraum "kumpel") bleiben unberuehrt, solange beim
+// Flashen "Erase device" nicht angehakt ist. Die Partitionstabelle ist dieselbe wie bei
+// TamaPoke (app3M_fat9M_16MB) - bitte nicht aendern.
 //
 // Uhrzeit: kommt aus der RTC (PCF85063), die wie bei TamaPoke die Ortszeit haelt.
 // Nur wenn man am Geraet die Uhr stellt, werden Stunde und Minute in die RTC
@@ -21,17 +22,21 @@
 #include "Arduino_GFX_Library.h"
 #include "TouchDrvCSTXXX.hpp"
 #include <SensorPCF85063.hpp>
+#include <SensorQMI8658.hpp>
 #include <XPowersLib.h>
+#include <Preferences.h>
 #include "game.h"
 
-#define FW_VERSION "0.4.1"
+#define FW_VERSION "0.5.0"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
 Arduino_CO5300 *panel = new Arduino_CO5300(bus, LCD_RESET, 0, LCD_WIDTH, LCD_HEIGHT, 6, 0, 0, 0);
 TouchDrvCST92xx touch;
 XPowersPMU pmu;
 SensorPCF85063 rtc;
-static bool rtcOk = false;
+SensorQMI8658 imu;
+static bool rtcOk = false, imuOk = false;
+static Preferences prefs;
 
 static uint16_t *fb = nullptr, *work = nullptr;
 
@@ -62,6 +67,41 @@ static void syncClock() {
   RTC_DateTime t = rtc.getDateTime();
   if (t.getYear() < 2025 || t.getYear() > 2120) return;   // keine gueltige Zeit
   kw::setClock(t.getHour(), t.getMinute(), t.getSecond(), t.getMonth());
+  kw::setDate(t.getYear(), t.getMonth(), t.getDay());
+}
+
+// Lagesensor -> Schwerkraft in Bildkoordinaten (fuer das Wasser im Aquarium).
+// Achsen wie in rotate.h vom Kumpel: +x zeigt zur Bild-Oberkante, +y zur rechten Bildkante;
+// der Sensor misst +1 g auf der Achse, die nach oben zeigt.
+static void readImu() {
+  static uint32_t last = 0;
+  static float fx = 1, fy = 0;
+  if (!imuOk || millis() - last < 20) return;
+  last = millis();
+  float x, y, z;
+  if (!imu.getDataReady() || !imu.getAccelerometer(x, y, z)) return;
+  fx += (x - fx) * 0.25f; fy += (y - fy) * 0.25f;   // Tiefpass gegen Zittern
+  kw::setGravity(-fy, fx);
+}
+
+// Menue-Einstellungen: eigener NVS-Namensraum "welt"
+static void loadSettings() {
+  kw::Settings s;
+  if (prefs.begin("welt", true)) {
+    s.worlds = prefs.getUChar("worlds", s.worlds);
+    s.interval = prefs.getUChar("interval", s.interval);
+    s.nightFrom = prefs.getChar("night", s.nightFrom);
+    prefs.end();
+  }
+  kw::setSettings(s);
+}
+static void saveSettings(const kw::Settings &s) {
+  if (!prefs.begin("welt", false)) { Serial.println("Einstellungen nicht gespeichert"); return; }
+  prefs.putUChar("worlds", s.worlds);
+  prefs.putUChar("interval", s.interval);
+  prefs.putChar("night", s.nightFrom);
+  prefs.end();
+  Serial.printf("Einstellungen gespeichert: Welten %x, Wechsel %u min, Nachtmond %d\n", s.worlds, s.interval, s.nightFrom);
 }
 
 void setup() {
@@ -81,6 +121,13 @@ void setup() {
   }
   rtcOk = rtc.begin(Wire, IIC_SDA, IIC_SCL);
   if (!rtcOk) Serial.println("RTC PCF85063 nicht gefunden - Uhr laeuft ab 12:00");
+  imuOk = imu.begin(Wire, QMI8658_L_SLAVE_ADDRESS, IIC_SDA, IIC_SCL);
+  if (imuOk) {
+    imu.configAccelerometer(SensorQMI8658::ACC_RANGE_4G, SensorQMI8658::ACC_ODR_62_5Hz, SensorQMI8658::LPF_MODE_0);
+    imu.enableAccelerometer();
+  } else {
+    Serial.println("Lagesensor QMI8658 nicht gefunden - Wasser bleibt waagerecht");
+  }
 
   fb = (uint16_t *)ps_malloc(LCD_WIDTH * LCD_HEIGHT * 2);
   work = (uint16_t *)ps_malloc(LCD_WIDTH * LCD_HEIGHT * 2);
@@ -102,6 +149,7 @@ void setup() {
 
   uint32_t t0 = millis();
   kw::begin(fb, work, esp_random());
+  loadSettings();
   Serial.printf("Start in %lu ms\n", (unsigned long)(millis() - t0));
   syncClock();
 }
@@ -111,6 +159,7 @@ void loop() {
   static uint32_t lastFrame = 0, lastClock = 0, fpsT = 0, frames = 0;
   static uint8_t brightNow = 0;
   readTouch();
+  readImu();
   uint32_t now = millis();
   if (now - lastClock > 10000) { lastClock = now; syncClock(); }
   if (now - lastFrame < 40) { delay(1); return; }
@@ -137,11 +186,15 @@ void loop() {
     syncClock();
   }
 
+  kw::Settings st;
+  if (kw::takeSettingsChange(st)) saveSettings(st);
+
   frames++;
   if (now - fpsT > 10000) {
     kw::Debug d = kw::debug();
-    Serial.printf("fps %.1f  zeit %.2f h  szene %s  tag %.2f  hell %u\n",
-                  frames * 1000.0f / (now - fpsT), d.hours, kw::sceneName(d.scene), d.daylight, brightNow);
+    Serial.printf("fps %.1f  zeit %.2f h  bild %s  tag %.2f  hell %u%s\n",
+                  frames * 1000.0f / (now - fpsT), d.hours, kw::sceneName(d.scene), d.daylight, brightNow,
+                  d.nightMoon ? "  (nachtmond)" : "");
     fpsT = now; frames = 0;
   }
 }

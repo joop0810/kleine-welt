@@ -1,7 +1,7 @@
-name: Firmware bauen (Mallorca-Deko)
+name: Firmware bauen (Deko-Welten)
 
-# Baut Kleine Welt in der Cloud und legt die vier Flash-Teile nach firmware/.
-# Vorher laeuft der PC-Test (host/sim.cpp), der den Raum per Touch durchspielt.
+# Baut die Deko-Welten (Kleine Welt) in der Cloud und legt die vier Flash-Teile nach firmware/.
+# Vorher laeuft der PC-Test (host/sim.cpp), der alle Bilder, Menue und Gesten durchspielt.
 # Danach ist die Installer-Seite (GitHub Pages aus main) automatisch aktuell.
 #
 # Startet bei jeder Aenderung am Quellcode oder per Hand:
@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: PC-Test (Raum durchspielen)
+      - name: PC-Test (alle Welten durchspielen)
         run: |
           g++ -O2 -std=c++17 -Ifirmware-src/KleineWelt host/sim.cpp firmware-src/KleineWelt/game.cpp -o sim
           mkdir -p sim-out && ./sim sim-out
